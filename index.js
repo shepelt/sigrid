@@ -9,7 +9,13 @@ const model = new ChatOpenAI({
 });
 
 function chat(prompt, opts) {
-    return model.invoke(prompt);
+    const messages = [];
+    if (opts.instruction) {
+        messages.push({ role: "system", content: opts.instruction });
+    }
+    messages.push({ role: "user", content: prompt });
+
+    return model.invoke(messages);
 }
 
 const program = new Command();
@@ -23,6 +29,7 @@ program
 program
     .argument("[prompt...]", "your prompt")
     .option("-s, --stream", "stream output")
+    .option("-i, --instruction <text>", "instruction")
     .action(async (words, opts) => {
         const prompt = words.join(" ") || await readStdin();
         if (!prompt) {
