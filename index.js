@@ -13,6 +13,9 @@ function chat(prompt, opts) {
     if (opts.instruction) {
         messages.push({ role: "system", content: opts.instruction });
     }
+    if (opts.pure) {
+        messages.push({ role: "system", content: "Respond with only the main content, no explanations. Do not include explanations, markdown formatting, or code fences." });
+    }
     messages.push({ role: "user", content: prompt });
 
     return model.invoke(messages);
@@ -28,6 +31,7 @@ program
 
 program
     .argument("[prompt...]", "your prompt")
+    .option("-p, --pure", "pure output")
     .option("-s, --stream", "stream output")
     .option("-i, --instruction <text>", "instruction")
     .action(async (words, opts) => {
