@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { ChatOpenAI } from "@langchain/openai";
 import 'dotenv/config';
+import os from "os";
 
 const model = new ChatOpenAI({
     modelName: "gpt-4o-mini", // 또는 gpt-4o
@@ -13,8 +14,19 @@ function chat(prompt, opts) {
     if (opts.instruction) {
         messages.push({ role: "system", content: opts.instruction });
     }
+
+    // Add environment context
+    const sysParts = [];
+    const platform = os.platform();   // 'darwin', 'linux', 'win32'
+    const release = os.release();     // kernel version
+    const arch = os.arch();           // 'x64', 'arm64', etc.
+    const envPrompt = `You are running in environment: ${platform} ${release} (${arch}).`
+    messages.push({ role: "system", content: envPrompt });
+
     if (opts.pure) {
-        messages.push({ role: "system", content: "Respond with only the main content, no explanations. Do not include explanations, markdown formatting, or code fences." });
+        messages.push({ role: "system", content: "Respond with only the main content, no explanations." });
+        messages.push({ role: "system", content: "Do not add any preamble or postamble." });
+        messages.push({ role: "system", content: "Do not include explanations, markdown formatting, or code fences." });
     }
     messages.push({ role: "user", content: prompt });
 
