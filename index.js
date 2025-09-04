@@ -1,26 +1,23 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { ChatOpenAI } from "@langchain/openai";
 import 'dotenv/config';
 import os from "os";
+import OpenAI from "openai";
 
-const model = new ChatOpenAI({
-    modelName: "gpt-4o-mini", // 또는 gpt-4o
-    temperature: 0,
-});
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-function chat(prompt, opts) {
+async function chat(prompt, opts = {}) {
     const messages = [];
+
     if (opts.instruction) {
         messages.push({ role: "system", content: opts.instruction });
     }
 
-    // Add environment context
-    const sysParts = [];
-    const platform = os.platform();   // 'darwin', 'linux', 'win32'
-    const release = os.release();     // kernel version
-    const arch = os.arch();           // 'x64', 'arm64', etc.
-    const envPrompt = `You are running in environment: ${platform} ${release} (${arch}).`
+    // 환경 정보 추가
+    const platform = os.platform();
+    const release = os.release();
+    const arch = os.arch();
+    const envPrompt = `You are running in environment: ${platform} ${release} (${arch}).`;
     messages.push({ role: "system", content: envPrompt });
 
     if (opts.pure) {
@@ -29,10 +26,26 @@ function chat(prompt, opts) {
         messages.push({ role: "system", content: "Do not include explanations, markdown formatting, or code fences." });
         messages.push({ role: "system", content: "Create content suitable for this OS and environment." });
     }
-    messages.push({ role: "user", content: prompt });
 
-    return model.invoke(messages);
+    messages.push({ role: "user", content: prompt });
+    if (opts.conversation && !opts.conversationID) {
+        const conv = await client.conversations.create();
+        opts.conversationID = conv.id;
+    }
+
+    const response = await client.responses.create({
+        model: opts.model || "gpt-4o-mini",
+        input: messages,
+        conversation: opts.conversationID
+    });
+
+    return {
+        content: response.output_text,
+        conversationID: response.conversation
+    };
 }
+
+
 
 const program = new Command();
 
@@ -50,7 +63,24 @@ program
     .action(async (words, opts) => {
         const prompt = words.join(" ") || await readStdin();
         if (!prompt) {
-            console.error("No prompt provided");
+            console.log("running in interactive mode");
+            opts.conversation = true;
+            while (true) {
+                const readline = await import("readline");
+                const rl = readline.createInterface({
+                    input: process.stdin,
+                    output: process.stdout
+                });
+                const question = (query) => new Promise((resolve) => rl.question(query, resolve));
+                const userInput = await question("You: ");
+                if (userInput.toLowerCase() === "exit" || userInput.toLowerCase() === "quit") {
+                    rl.close();
+                    break;
+                }
+                const res = await chat(userInput, opts);
+                console.log("Sigrid:", res.content);
+                rl.close();
+            }
             process.exit(2);
         }
         var res = await chat(prompt, opts);
