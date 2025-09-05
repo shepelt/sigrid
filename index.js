@@ -9,7 +9,7 @@ import OpenAI from "openai";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // tooling support
-const SANDBOX_ROOT = path.resolve(process.cwd());
+let sandboxRoot = path.resolve(process.cwd());
 const MAX_BYTES = 64 * 1024;
 const readFileTool = {
     type: "function",
@@ -26,10 +26,28 @@ const readFileTool = {
         required: ["filepath"]
     }
 };
+const LIST_MAX_ENTRIES = 500;
+const LIST_MAX_DEPTH = 3;
+const listDirTool = {
+    type: "function",
+    name: "list_dir",
+    description:
+        "List files/directories within the sandbox. Useful before read_file. Returns basic metadata (type, size, mtime).",
+    parameters: {
+        type: "object",
+        properties: {
+            dir: { type: "string", description: "Directory path (relative to project root). Default: '.'" },
+            recursive: { type: "boolean", default: false, description: "Recurse into subdirectories up to max_depth." },
+            max_depth: { type: "integer", minimum: 1, maximum: LIST_MAX_DEPTH, default: 1 },
+            include_hidden: { type: "boolean", default: false, description: "Include dotfiles (.*)" },
+            limit: { type: "integer", minimum: 1, maximum: LIST_MAX_ENTRIES, default: 200 },
+        }
+    }
+};
 
 function assertInsideSandbox(p) {
-    const abs = path.resolve(SANDBOX_ROOT, p);
-    if (!abs.startsWith(SANDBOX_ROOT + path.sep) && abs !== SANDBOX_ROOT) {
+    const abs = path.resolve(sandboxRoot, p);
+    if (!abs.startsWith(sandboxRoot + path.sep) && abs !== sandboxRoot) {
         throw new Error("Access outside sandbox is not allowed.");
     }
     return abs;
@@ -41,13 +59,14 @@ async function handleReadFile(args) {
     const stat = await fs.stat(abs);
     const end = Math.min(start + length, stat.size);
     const fh = await fs.open(abs, "r");
+
     try {
         const buf = Buffer.alloc(end - start);
         await fh.read(buf, 0, buf.length, start);
         const text = buf.toString(encoding);
         return {
             ok: true,
-            path: path.relative(SANDBOX_ROOT, abs),
+            path: path.relative(sandboxRoot, abs),
             size: stat.size,
             start,
             end,
@@ -59,6 +78,80 @@ async function handleReadFile(args) {
     }
 }
 
+async function handleListDir(args = {}) {
+    const {
+        dir = ".",
+        recursive = false,
+        max_depth = 1,
+        include_hidden = false,
+        limit = 200
+    } = args;
+
+    const absRoot = assertInsideSandbox(dir);
+    const maxDepth = Math.min(max_depth, LIST_MAX_DEPTH);
+    const cap = Math.min(limit, LIST_MAX_ENTRIES);
+    const results = [];
+    const q = [{ abs: absRoot, rel: path.relative(sandboxRoot, absRoot) || ".", depth: 0 }];
+
+    while (q.length && results.length < cap) {
+        const { abs, rel, depth } = q.shift();
+
+        let dirHandle;
+        try {
+            dirHandle = await fs.opendir(abs);
+        } catch (e) {
+            const st = await fs.lstat(abs);
+            results.push(toEntry(abs, rel, st));
+            continue;
+        }
+
+        for await (const dirent of dirHandle) {
+            if (results.length >= cap) break;
+
+            const name = dirent.name;
+            if (!include_hidden && name.startsWith(".")) continue;
+
+            const childAbs = path.join(abs, name);
+            const childRel = path.relative(sandboxRoot, childAbs);
+            const st = await fs.lstat(childAbs);
+
+            results.push(toEntry(childAbs, childRel, st));
+
+            // 재귀: symlink는 타지 않고, 디렉터리만 큐에 추가
+            if (recursive && dirent.isDirectory() && depth + 1 < maxDepth) {
+                q.push({ abs: childAbs, rel: childRel, depth: depth + 1 });
+            }
+        }
+    }
+
+    return {
+        ok: true,
+        root: path.relative(sandboxRoot, absRoot) || ".",
+        count: results.length,
+        truncated: results.length >= cap,
+        entries: results
+    };
+}
+
+function toEntry(abs, rel, st) {
+    const type = st.isDirectory()
+        ? "dir"
+        : st.isSymbolicLink()
+            ? "link"
+            : st.isFile()
+                ? "file"
+                : "other";
+    return {
+        path: rel,
+        name: path.basename(abs),
+        type,
+        size: st.size,
+        mtimeMs: st.mtimeMs
+    };
+}
+
+
+// tooling helpers
 function extractToolCalls(r) {
     const calls = [];
 
@@ -131,16 +224,22 @@ async function chat(prompt, opts = {}) {
             "You can call the tool `read_file` to inspect project files. Only read within the sandbox root. " +
             `Prefer small previews (<= ${MAX_BYTES} bytes). For large files, request a narrower range.`
     });
-    opts.enableFileRead = true; // always enable for now
+    messages.push({
+        role: "system",
+        content:
+            "You can call tools `list_dir` to list project files in directory. "
+    });
 
     messages.push({ role: "user", content: prompt });
 
+
+    var turnNumber = 0;
     let response = await client.responses.create({
         model: opts.model || "gpt-4o-mini",
         input: messages,
         conversation: opts.conversationID,
-        tools: [readFileTool],
-        tool_choice: opts.enableFileRead ? "auto" : undefined
+        tools: [readFileTool, listDirTool],
+        tool_choice: "auto"
     });
 
     // tooling loop
@@ -151,8 +250,8 @@ async function chat(prompt, opts = {}) {
                 toolCalls.push(item); // { type, name, arguments, call_id }
             }
         }
-        if (toolCalls.length === 0) break;
 
+        if (toolCalls.length === 0) break;
         for (const fc of toolCalls) {
             try {
                 let toolResult;
@@ -160,6 +259,9 @@ async function chat(prompt, opts = {}) {
                 if (fc.name === "read_file") {
                     const args = JSON.parse(fc.arguments || "{}");
                     toolResult = await handleReadFile(args);
+                } else if (fc.name === "list_dir") {
+                    const args = JSON.parse(fc.arguments || "{}");
+                    toolResult = await handleListDir(args);
                 } else {
                     toolResult = { ok: false, error: `Unknown tool: ${fc.name}` };
                 }
@@ -195,7 +297,7 @@ async function chat(prompt, opts = {}) {
             model: opts.model || "gpt-4o-mini",
             input: messages,
             conversation: response.conversation,
-            tools: opts.enableFileRead ? [readFileTool] : undefined,
+            tools: [readFileTool, listDirTool],
             tool_choice: opts.enableFileRead ? "auto" : undefined
         });
     }
@@ -217,10 +319,17 @@ program
 
 program
     .argument("[prompt...]", "your prompt")
+    .option("-e, --environment <text>", "change directory to sandbox environment")
     .option("-p, --pure", "pure output")
     .option("-s, --stream", "stream output")
     .option("-i, --instruction <text>", "instruction")
     .action(async (words, opts) => {
+        // change sandbox directory
+        if (opts.environment) {
+            process.chdir(opts.environment);
+            sandboxRoot = path.resolve(process.cwd());
+        }
+
         const prompt = words.join(" ") || await readStdin();
         if (!prompt) {
             console.log("running in interactive mode");
