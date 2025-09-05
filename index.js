@@ -5,6 +5,7 @@ import os from "os";
 import fs from "node:fs/promises";
 import path from "node:path";
 import OpenAI from "openai";
+import { randomBytes } from "node:crypto";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -42,6 +43,35 @@ const listDirTool = {
             include_hidden: { type: "boolean", default: false, description: "Include dotfiles (.*)" },
             limit: { type: "integer", minimum: 1, maximum: LIST_MAX_ENTRIES, default: 200 },
         }
+    }
+};
+
+const WRITE_MAX_BYTES = 256 * 1024; // 256KB 기본 상한 (원하면 키우기)
+const WRITE_ALLOWED_EXTS = [
+    ".md", ".txt", ".log", ".json", ".js", ".ts", ".tsx", ".jsx",
+    ".css", ".html", ".sh", ".yml", ".yaml", ".gitignore"
+];
+const writeFileTool = {
+    type: "function",
+    name: "write_file",
+    description:
+        "Write a UTF-8 text file within the sandbox, atomically (tmpfile → rename). Supports create/overwrite/append.",
+    parameters: {
+        type: "object",
+        properties: {
+            filepath: { type: "string", description: "Relative path from project root" },
+            content: { type: "string", description: "UTF-8 text content to write" },
+            mode: { type: "string", enum: ["overwrite", "append", "create"], default: "overwrite" },
+            mkdirp: { type: "boolean", default: true, description: "Create parent directories if needed" },
+            make_backup: { type: "boolean", default: false, description: "Create .bak before overwrite" },
+            max_bytes: { type: "integer", minimum: 1, maximum: WRITE_MAX_BYTES, default: WRITE_MAX_BYTES },
+            eol: {
+                type: "string", enum: ["lf", "crlf", "auto"], default: "auto",
+                description: "Normalize line endings. 'auto' keeps as-is."
+            },
+            chmod: { type: "string", description: "Optional chmod like '644' or '755' (octal string)" }
+        },
+        required: ["filepath", "content"]
     }
 };
 
@@ -150,6 +180,121 @@ function toEntry(abs, rel, st) {
     };
 }
 
+// write file tooling
+function normalizeEOL(text, eol) {
+    if (eol === "lf") return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    if (eol === "crlf") return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n/g, "\r\n");
+    return text; // auto
+}
+
+async function ensureParentDir(target, mkdirp) {
+    const parent = path.dirname(target);
+    if (mkdirp) await fs.mkdir(parent, { recursive: true });
+}
+
+async function makeBackupIfNeeded(target) {
+    try {
+        const st = await fs.stat(target);
+        if (st.isFile()) {
+            await fs.copyFile(target, target + ".bak");
+        }
+    } catch {
+        /* no-op if not exists */
+    }
+}
+
+async function handleWriteFile(args = {}) {
+    const {
+        filepath,
+        content,
+        mode = "overwrite",
+        mkdirp = true,
+        make_backup = false,
+        max_bytes = WRITE_MAX_BYTES,
+        eol = "auto",
+        chmod
+    } = args ?? {};
+
+    if (typeof filepath !== "string" || typeof content !== "string") {
+        throw new Error("Invalid 'filepath' or 'content'");
+    }
+    const abs = assertInsideSandbox(filepath);
+
+    // 확장자 제한
+    const ext = path.extname(abs).toLowerCase();
+    if (!WRITE_ALLOWED_EXTS.includes(ext)) {
+        throw new Error(`Disallowed file type: ${ext || "(no ext)"}`);
+    }
+
+
+    // 크기 제한
+    const buf = Buffer.from(normalizeEOL(content, eol), "utf-8");
+    if (buf.length > Math.min(max_bytes, WRITE_MAX_BYTES)) {
+        throw new Error(`Content too large: ${buf.length} bytes (max ${Math.min(max_bytes, WRITE_MAX_BYTES)})`);
+    }
+
+    await ensureParentDir(abs, mkdirp);
+
+    // append 모드면 원자성 보장 위해 기존 + 신규 → tmp → rename
+    let finalContent = buf;
+    if (mode === "append") {
+        try {
+            const existing = await fs.readFile(abs);
+            finalContent = Buffer.concat([existing, buf]);
+            if (finalContent.length > Math.min(max_bytes, WRITE_MAX_BYTES)) {
+                throw new Error(`Resulting file too large after append: ${finalContent.length} bytes`);
+            }
+        } catch {
+            // 없으면 새로 생성
+            if (mode === "append") {
+                // 그대로 진행
+            }
+        }
+    } else if (mode === "create") {
+        // 이미 있으면 거부
+        try {
+            await fs.access(abs);
+            throw new Error("File already exists (mode=create).");
+        } catch {
+            /* OK if not exists */
+        }
+    } else if (mode !== "overwrite") {
+        throw new Error("Invalid mode. Use overwrite | append | create");
+    }
+
+    if (make_backup && mode !== "create") {
+        await makeBackupIfNeeded(abs);
+    }
+
+    // 원자적 쓰기: tmp → rename
+    const rand = randomBytes(6).toString("hex");
+    const tmp = abs + ".tmp-" + rand;
+    await fs.writeFile(tmp, finalContent, { encoding: "utf-8", flag: "w" });
+
+    if (chmod) {
+        // 안전한 8진수 처리
+        const perm = parseInt(chmod, 8);
+        if (!Number.isNaN(perm)) await fs.chmod(tmp, perm);
+    }
+    await fs.rename(tmp, abs);
+
+    const stat = await fs.stat(abs);
+
+    return {
+        ok: true,
+        path: path.relative(sandboxRoot, abs),
+        size: stat.size,
+        mtimeMs: stat.mtimeMs,
+        mode,
+        backup: make_backup ? (await exists(abs + ".bak")) : false
+    };
+}
+
+async function exists(p) {
+    try { await fs.access(p); return true; } catch { return false; }
+}
+
+
 
 // tooling helpers
 function extractToolCalls(r) {
@@ -221,13 +366,8 @@ async function chat(prompt, opts = {}) {
     messages.push({
         role: "system",
         content:
-            "You can call the tool `read_file` to inspect project files. Only read within the sandbox root. " +
-            `Prefer small previews (<= ${MAX_BYTES} bytes). For large files, request a narrower range.`
-    });
-    messages.push({
-        role: "system",
-        content:
-            "You can call tools `list_dir` to list project files in directory. "
+            "You can call tools `list_dir` (browse), `read_file` (preview), and `write_file` (save). " +
+            "Stay within the sandbox. Write only small UTF-8 text files. For large edits, ask for a narrower scope."
     });
 
     messages.push({ role: "user", content: prompt });
@@ -238,7 +378,7 @@ async function chat(prompt, opts = {}) {
         model: opts.model || "gpt-4o-mini",
         input: messages,
         conversation: opts.conversationID,
-        tools: [readFileTool, listDirTool],
+        tools: [readFileTool, listDirTool, writeFileTool],
         tool_choice: "auto"
     });
 
@@ -251,6 +391,8 @@ async function chat(prompt, opts = {}) {
             }
         }
 
+        // console.log("resp turn", turnNumber++, "tool calls:", toolCalls.length);
+
         if (toolCalls.length === 0) break;
         for (const fc of toolCalls) {
             try {
@@ -262,6 +404,9 @@ async function chat(prompt, opts = {}) {
                 } else if (fc.name === "list_dir") {
                     const args = JSON.parse(fc.arguments || "{}");
                     toolResult = await handleListDir(args);
+                } else if (fc.name === "write_file") {
+                    const args = JSON.parse(fc.arguments || "{}");
+                    toolResult = await handleWriteFile(args);
                 } else {
                     toolResult = { ok: false, error: `Unknown tool: ${fc.name}` };
                 }
@@ -297,8 +442,8 @@ async function chat(prompt, opts = {}) {
             model: opts.model || "gpt-4o-mini",
             input: messages,
             conversation: response.conversation,
-            tools: [readFileTool, listDirTool],
-            tool_choice: opts.enableFileRead ? "auto" : undefined
+            tools: [readFileTool, listDirTool, writeFileTool],
+            tool_choice: "auto"
         });
     }
 
