@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import OpenAI from "openai";
 import { randomBytes } from "node:crypto";
+import chalk from 'chalk'; // Added for colorizing outputs
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -495,13 +496,13 @@ program
                     output: process.stdout
                 });
                 const question = (query) => new Promise((resolve) => rl.question(query, resolve));
-                const userInput = await question("You: ");
+                const userInput = await question(chalk.green("You: ")); // Colorized user input
                 if (userInput.toLowerCase() === "exit" || userInput.toLowerCase() === "quit") {
                     rl.close();
                     break;
                 }
                 const res = await chat(userInput, opts);
-                console.log("Sigrid:", res.content);
+                console.log(chalk.blue("Sigrid:"), res.content); // Colorized Sigrid output
                 rl.close();
             }
             process.exit(2);
