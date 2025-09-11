@@ -1,0 +1,1 @@
+I want to make improvement to sigrid - existing Sigrid: and You: chat output needs to be colorized.
