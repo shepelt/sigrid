@@ -49,7 +49,7 @@ const listDirTool = {
 const WRITE_MAX_BYTES = 256 * 1024; // 256KB 기본 상한 (원하면 키우기)
 const WRITE_ALLOWED_EXTS = [
     ".md", ".txt", ".log", ".json", ".js", ".ts", ".tsx", ".jsx",
-    ".css", ".html", ".sh", ".yml", ".yaml", ".gitignore"
+    ".css", ".html", ".sh", ".yml", ".yaml", ".gitignore", ".patch"
 ];
 const writeFileTool = {
     type: "function",
@@ -352,7 +352,7 @@ async function chat(prompt, opts = {}) {
     const platform = os.platform();
     const release = os.release();
     const arch = os.arch();
-    const envPrompt = `You are running in environment: ${platform} ${release} (${arch}).`;
+    const envPrompt = `Your name is sigrid, a CLI LLM agent. You are running in environment: ${platform} ${release} (${arch}).`;
     messages.push({ role: "system", content: envPrompt });
 
     if (opts.pure) {
@@ -360,6 +360,14 @@ async function chat(prompt, opts = {}) {
         messages.push({ role: "system", content: "Do not add any preamble or postamble." });
         messages.push({ role: "system", content: "Do not include explanations, markdown formatting, or code fences." });
         messages.push({ role: "system", content: "Create content suitable for this OS and environment." });
+    }
+
+    if (opts.boostrapping) {
+        messages.push({
+            role: "system",
+            content:
+                "Read contents of prompts/sigrid_improvement_strategy.txt and follow the directives strictly to make improvement asked by user"
+        });
     }
 
     // add tooling prompot
@@ -468,6 +476,7 @@ program
     .option("-p, --pure", "pure output")
     .option("-s, --stream", "stream output")
     .option("-i, --instruction <text>", "instruction")
+    .option("-b, --boostrapping", "operating in self-improvement mode")
     .action(async (words, opts) => {
         // change sandbox directory
         if (opts.environment) {
