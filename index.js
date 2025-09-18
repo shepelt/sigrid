@@ -7,6 +7,7 @@ import path from "node:path";
 import OpenAI from "openai";
 import { randomBytes } from "node:crypto";
 import chalk from 'chalk'; // Added for colorizing outputs
+import ora from 'ora'; // Import ora for loading spinner
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -504,7 +505,9 @@ program
                     rl.close();
                     break;
                 }
+                const spinner = ora('Waiting for response...').start(); // Start spinner
                 const res = await chat(userInput, opts);
+                spinner.stop(); // Stop spinner
                 console.log(chalk.blue("Sigrid:"), res.content); // Colorized Sigrid output
                 rl.close();
             }
