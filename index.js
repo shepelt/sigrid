@@ -95,6 +95,7 @@ async function handleReadFile(args) {
         const buf = Buffer.alloc(end - start);
         await fh.read(buf, 0, buf.length, start);
         const text = buf.toString(encoding);
+        console.log(chalk.green(`Read file: ${filepath}`)); // Log message
         return {
             ok: true,
             path: path.relative(sandboxRoot, abs),
@@ -155,6 +156,7 @@ async function handleListDir(args = {}) {
         }
     }
 
+    console.log(chalk.green(`Listed directory: ${dir}`)); // Log message
     return {
         ok: true,
         root: path.relative(sandboxRoot, absRoot) || ".",
@@ -281,6 +283,7 @@ async function handleWriteFile(args = {}) {
 
     const stat = await fs.stat(abs);
 
+    console.log(chalk.green(`Wrote file: ${filepath}`)); // Log message
     return {
         ok: true,
         path: path.relative(sandboxRoot, abs),
