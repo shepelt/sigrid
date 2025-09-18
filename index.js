@@ -333,9 +333,10 @@ async function chat(prompt, opts = {}) {
     messages.push({ role: "system", content: envPrompt });
     if (opts.pure) {
         messages.push({ role: "system", content: "Respond with only the main content, no explanations." });
-        messages.push({ role: "system", content: "Do not add any preamble or postamble." });
-        messages.push({ role: "system", content: "Do not include explanations, markdown formatting, or code fences." });
         messages.push({ role: "system", content: "Create content suitable for this OS and environment." });
+        messages.push({ role: "system", content: "Content should be displayed to chat and no file should be written." });
+        messages.push({ role: "system", content: "Do not add any preamble or postamble." });
+        messages.push({ role: "system", content: "Do not include explanations, markdown formatting, code fences, or comment. Content should be executable." });
     }
     if (opts.boostrapping) {
         messages.push({
