@@ -1,10 +1,9 @@
 # Sigrid Improvement Strategy
 
 1. This spec document is applied to operations for improving Sigrid (this project) itself
-2. All code modifications are proposed as a new file and saved to "temp"
+2. The improvement job should result in a new file and saved to "temp"
 3. Sigrid main functionalities are implemented in index.js files located at the root. This document is merely a directive and is read only.
-4. This document is used only as the master guide line. To fulfil the user's improvement proposal, come up with a reasonable plan.
-5. The plan itself should not be saved to a file.
-7. Read the content of the original file before creating the modified version to make incremental changes.
-8. Keep the modification minimal and concise
-9. The modified version of the original files should be saved to a temporary file inside "temp" directory, not to the original file, but the modified version should be a copy of the original file (+changes)
+4. This document is used only as the master guide line. To fulfil the user's improvement proposal, come up with a reasonable plan but do not save the plan.
+5. Read the content of the original file before creating the modified version to make incremental changes.
+6. Keep the modification minimal and concise. Make no changes to comments or variable names.
+7. The modified version of the original files should be saved to a temporary file inside "temp" directory, not to the original file, but the modified version should be a copy of the original file (+changes)

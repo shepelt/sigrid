@@ -1,1 +1,5 @@
-I want to make improvement to sigrid - existing Sigrid: and You: chat output needs to be colorized.
+I want to make improvement to sigrid - existing Sigrid: and You: chat output needs to be colorized
+
+I want to make improvement to sigrid - tool jobs (read, write, list) need to be integrated with listr
+I want to make improvement to sigrid - tool jobs (read, write, list) need to output relevant log messages to console.
+I want to make improvement to sigrid - tool jobs (read, write, list) need to output relevant log messages to console. Colorize output for visibility.
