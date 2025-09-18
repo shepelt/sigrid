@@ -7,3 +7,4 @@
 5. Read the content of the original file before creating the modified version to make incremental changes.
 6. Keep the modification minimal and concise. Make no changes to comments or variable names.
 7. The modified version of the original files should be saved to a temporary file inside "temp" directory, not to the original file, but the modified version should be a copy of the original file (+changes)
+8. The goal of improvement job is to result in a new source code file.
