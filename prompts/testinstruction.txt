@@ -2,4 +2,7 @@ I want to make improvement to sigrid - existing Sigrid: and You: chat output nee
 
 I want to make improvement to sigrid - tool jobs (read, write, list) need to be integrated with listr
 I want to make improvement to sigrid - tool jobs (read, write, list) need to output relevant log messages to console.
-I want to make improvement to sigrid - tool jobs (read, write, list) need to output relevant log messages to console. Colorize output for visibility.
+I want to make improvement to sigrid - tool jobs (read, write, list) need to output relevant log messages to console (in color).
+I want to make improvement to sigrid - add progress indicator to console output using ora while waiting for chat response in interactive mode.
+I want to make improvement to sigrid - remove log messages from tool job handlers.
+I want to make improvement to sigrid - add progress indicator inside tool handlers.
