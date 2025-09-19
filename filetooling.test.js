@@ -13,16 +13,16 @@ import {
     listDirTool,
     writeFileTool,
     fileTools
-} from '../filetooling.js';
+} from './filetooling.js';
 
 describe('Filetooling', () => {
     let tempDir;
     let originalCwd;
-    let spinnerCallbacks = [];
+    let progressCallbacks = [];
 
-    // Mock spinner callback to track calls
-    const mockSpinnerCallback = (action, message) => {
-        spinnerCallbacks.push({ action, message });
+    // Mock progress callback to track calls
+    const mockProgressCallback = (action, message) => {
+        progressCallbacks.push({ action, message });
     };
 
     beforeEach(async () => {
@@ -30,7 +30,7 @@ describe('Filetooling', () => {
         tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sigrid-test-'));
         originalCwd = process.cwd();
         setSandboxRoot(tempDir);
-        spinnerCallbacks = []; // Reset spinner callbacks
+        progressCallbacks = []; // Reset progress callbacks
     });
 
     afterEach(async () => {
@@ -95,7 +95,7 @@ describe('Filetooling', () => {
             const result = await handleWriteFile({
                 filepath: testFile,
                 content: testContent
-            }, mockSpinnerCallback);
+            }, mockProgressCallback);
 
             expect(result.ok).toBe(true);
             expect(result.path).toBe(testFile);
@@ -106,10 +106,10 @@ describe('Filetooling', () => {
             const fileContent = await fs.readFile(filePath, 'utf8');
             expect(fileContent).toBe(testContent);
 
-            // Verify spinner callbacks
-            expect(spinnerCallbacks).toHaveLength(2);
-            expect(spinnerCallbacks[0]).toEqual({ action: 'start', message: 'Writing file...' });
-            expect(spinnerCallbacks[1]).toEqual({ action: 'succeed', message: 'File written successfully' });
+            // Verify progress callbacks
+            expect(progressCallbacks).toHaveLength(2);
+            expect(progressCallbacks[0]).toEqual({ action: 'start', message: 'Writing file...' });
+            expect(progressCallbacks[1]).toEqual({ action: 'succeed', message: 'File written successfully' });
         });
 
         test('handleReadFile reads existing file', async () => {
@@ -122,17 +122,17 @@ describe('Filetooling', () => {
 
             const result = await handleReadFile({
                 filepath: testFile
-            }, mockSpinnerCallback);
+            }, mockProgressCallback);
 
             expect(result.ok).toBe(true);
             expect(result.path).toBe(testFile);
             expect(result.preview).toBe(testContent);
             expect(result.truncated).toBe(false);
 
-            // Verify spinner callbacks
-            expect(spinnerCallbacks).toHaveLength(2);
-            expect(spinnerCallbacks[0]).toEqual({ action: 'start', message: 'Reading file...' });
-            expect(spinnerCallbacks[1]).toEqual({ action: 'succeed', message: 'File read successfully' });
+            // Verify progress callbacks
+            expect(progressCallbacks).toHaveLength(2);
+            expect(progressCallbacks[0]).toEqual({ action: 'start', message: 'Reading file...' });
+            expect(progressCallbacks[1]).toEqual({ action: 'succeed', message: 'File read successfully' });
         });
 
         test('handleListDir lists directory contents', async () => {
@@ -143,7 +143,7 @@ describe('Filetooling', () => {
 
             const result = await handleListDir({
                 dir: '.'
-            }, mockSpinnerCallback);
+            }, mockProgressCallback);
 
             expect(result.ok).toBe(true);
             expect(result.entries).toHaveLength(3);
@@ -153,20 +153,20 @@ describe('Filetooling', () => {
             expect(entryNames).toContain('file2.js');
             expect(entryNames).toContain('subdir');
 
-            // Verify spinner callbacks
-            expect(spinnerCallbacks).toHaveLength(2);
-            expect(spinnerCallbacks[0]).toEqual({ action: 'start', message: 'Listing directory...' });
-            expect(spinnerCallbacks[1]).toEqual({ action: 'succeed', message: 'Directory listed successfully' });
+            // Verify progress callbacks
+            expect(progressCallbacks).toHaveLength(2);
+            expect(progressCallbacks[0]).toEqual({ action: 'start', message: 'Listing directory...' });
+            expect(progressCallbacks[1]).toEqual({ action: 'succeed', message: 'Directory listed successfully' });
         });
 
-        test('handleWriteFile works without spinner callback', async () => {
+        test('handleWriteFile works without progress callback', async () => {
             const testFile = 'test.txt';
             const testContent = 'Hello, World!';
 
             const result = await handleWriteFile({
                 filepath: testFile,
                 content: testContent
-            }); // No spinner callback
+            }); // No progress callback
 
             expect(result.ok).toBe(true);
             expect(result.path).toBe(testFile);
@@ -179,13 +179,13 @@ describe('Filetooling', () => {
             await expect(handleWriteFile({
                 filepath: testFile,
                 content: testContent
-            }, mockSpinnerCallback)).rejects.toThrow('Disallowed file type');
+            }, mockProgressCallback)).rejects.toThrow('Disallowed file type');
 
-            // Verify spinner callbacks include fail
-            expect(spinnerCallbacks).toHaveLength(2);
-            expect(spinnerCallbacks[0]).toEqual({ action: 'start', message: 'Writing file...' });
-            expect(spinnerCallbacks[1].action).toBe('fail');
-            expect(spinnerCallbacks[1].message).toContain('Error writing file');
+            // Verify progress callbacks include fail
+            expect(progressCallbacks).toHaveLength(2);
+            expect(progressCallbacks[0]).toEqual({ action: 'start', message: 'Writing file...' });
+            expect(progressCallbacks[1].action).toBe('fail');
+            expect(progressCallbacks[1].message).toContain('Error writing file');
         });
 
         test('handleWriteFile creates parent directories when mkdirp is true', async () => {
@@ -196,7 +196,7 @@ describe('Filetooling', () => {
                 filepath: testFile,
                 content: testContent,
                 mkdirp: true
-            }, mockSpinnerCallback);
+            }, mockProgressCallback);
 
             expect(result.ok).toBe(true);
             
@@ -207,31 +207,31 @@ describe('Filetooling', () => {
         });
     });
 
-    describe('Spinner Callback Integration', () => {
-        test('spinner callback receives correct actions for successful operations', async () => {
-            const testFile = 'spinner-test.txt';
+    describe('Progress Callback Integration', () => {
+        test('progress callback receives correct actions for successful operations', async () => {
+            const testFile = 'progress-test.txt';
             const testContent = 'Test content';
 
             await handleWriteFile({
                 filepath: testFile,
                 content: testContent
-            }, mockSpinnerCallback);
+            }, mockProgressCallback);
 
-            expect(spinnerCallbacks).toEqual([
+            expect(progressCallbacks).toEqual([
                 { action: 'start', message: 'Writing file...' },
                 { action: 'succeed', message: 'File written successfully' }
             ]);
         });
 
-        test('spinner callback receives fail action for errors', async () => {
+        test('progress callback receives fail action for errors', async () => {
             await expect(handleReadFile({
                 filepath: 'nonexistent.txt'
-            }, mockSpinnerCallback)).rejects.toThrow();
+            }, mockProgressCallback)).rejects.toThrow();
 
-            expect(spinnerCallbacks).toHaveLength(2);
-            expect(spinnerCallbacks[0]).toEqual({ action: 'start', message: 'Reading file...' });
-            expect(spinnerCallbacks[1].action).toBe('fail');
-            expect(spinnerCallbacks[1].message).toContain('Error reading file');
+            expect(progressCallbacks).toHaveLength(2);
+            expect(progressCallbacks[0]).toEqual({ action: 'start', message: 'Reading file...' });
+            expect(progressCallbacks[1].action).toBe('fail');
+            expect(progressCallbacks[1].message).toContain('Error reading file');
         });
     });
 
@@ -239,69 +239,69 @@ describe('Filetooling', () => {
         test('handleReadFile rejects paths outside sandbox', async () => {
             await expect(handleReadFile({
                 filepath: '../outside.txt'
-            }, mockSpinnerCallback)).rejects.toThrow('Access outside sandbox is not allowed');
+            }, mockProgressCallback)).rejects.toThrow('Access outside sandbox is not allowed');
         });
 
         test('handleWriteFile rejects paths outside sandbox', async () => {
             await expect(handleWriteFile({
                 filepath: '../outside.txt',
                 content: 'content'
-            }, mockSpinnerCallback)).rejects.toThrow('Access outside sandbox is not allowed');
+            }, mockProgressCallback)).rejects.toThrow('Access outside sandbox is not allowed');
         });
 
         test('handleListDir rejects paths outside sandbox', async () => {
             await expect(handleListDir({
                 dir: '../'
-            }, mockSpinnerCallback)).rejects.toThrow('Access outside sandbox is not allowed');
+            }, mockProgressCallback)).rejects.toThrow('Access outside sandbox is not allowed');
         });
     });
 
     describe('executeFileTool dispatcher', () => {
-        test('executeFileTool dispatches to correct handler with spinner', async () => {
+        test('executeFileTool dispatches to correct handler with progress callback', async () => {
             const testFile = 'dispatcher.txt';
             const testContent = 'Test content';
 
             const result = await executeFileTool('write_file', {
                 filepath: testFile,
                 content: testContent
-            }, mockSpinnerCallback);
+            }, mockProgressCallback);
 
             expect(result.ok).toBe(true);
             expect(result.path).toBe(testFile);
 
-            // Verify spinner was called
-            expect(spinnerCallbacks).toHaveLength(2);
-            expect(spinnerCallbacks[0].action).toBe('start');
-            expect(spinnerCallbacks[1].action).toBe('succeed');
+            // Verify progress callback was called
+            expect(progressCallbacks).toHaveLength(2);
+            expect(progressCallbacks[0].action).toBe('start');
+            expect(progressCallbacks[1].action).toBe('succeed');
         });
 
         test('executeFileTool throws error for unknown tool', async () => {
-            await expect(executeFileTool('unknown_tool', {}, mockSpinnerCallback))
+            await expect(executeFileTool('unknown_tool', {}, mockProgressCallback))
                 .rejects.toThrow('Unknown tool: unknown_tool');
         });
     });
 
     describe('Error Handling', () => {
-        test('handleReadFile handles non-existent file with spinner', async () => {
+        test('handleReadFile handles non-existent file with progress callback', async () => {
             await expect(handleReadFile({
                 filepath: 'nonexistent.txt'
-            }, mockSpinnerCallback)).rejects.toThrow();
+            }, mockProgressCallback)).rejects.toThrow();
 
-            // Verify spinner fail callback
-            expect(spinnerCallbacks).toHaveLength(2);
-            expect(spinnerCallbacks[1].action).toBe('fail');
+            // Verify progress fail callback
+            expect(progressCallbacks).toHaveLength(2);
+            expect(progressCallbacks[1].action).toBe('fail');
         });
 
-        test('handleWriteFile handles invalid arguments with spinner', async () => {
+        test('handleWriteFile handles invalid arguments with progress callback', async () => {
             await expect(handleWriteFile({
                 filepath: null,
                 content: 'content'
-            }, mockSpinnerCallback)).rejects.toThrow("Invalid 'filepath' or 'content'");
+            }, mockProgressCallback)).rejects.toThrow("Invalid 'filepath' or 'content'");
 
             await expect(handleWriteFile({
                 filepath: 'test.txt',
                 content: null
-            }, mockSpinnerCallback)).rejects.toThrow("Invalid 'filepath' or 'content'");
+            }, mockProgressCallback)).rejects.toThrow("Invalid 'filepath' or 'content'");
         });
 
         test('handleWriteFile respects size limits', async () => {
@@ -310,7 +310,7 @@ describe('Filetooling', () => {
             await expect(handleWriteFile({
                 filepath: 'large.txt',
                 content: largeContent
-            }, mockSpinnerCallback)).rejects.toThrow('Content too large');
+            }, mockProgressCallback)).rejects.toThrow('Content too large');
         });
     });
 });

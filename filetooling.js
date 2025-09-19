@@ -133,12 +133,12 @@ async function exists(p) {
     try { await fs.access(p); return true; } catch { return false; }
 }
 
-// Tool handlers with spinner callback support
-export async function handleReadFile(args, spinnerCallback = null) {
+// Tool handlers with progress callback support
+export async function handleReadFile(args, progressCallback = null) {
     const { filepath, encoding = "utf-8", start = 0, length = MAX_BYTES } = args;
     
     try {
-        if (spinnerCallback) spinnerCallback('start', 'Reading file...');
+        if (progressCallback) progressCallback('start', 'Reading file...');
         
         const abs = assertInsideSandbox(filepath);
         const stat = await fs.stat(abs);
@@ -150,7 +150,7 @@ export async function handleReadFile(args, spinnerCallback = null) {
             await fh.read(buf, 0, buf.length, start);
             const text = buf.toString(encoding);
             
-            if (spinnerCallback) spinnerCallback('succeed', 'File read successfully');
+            if (progressCallback) progressCallback('succeed', 'File read successfully');
             
             return {
                 ok: true,
@@ -165,14 +165,14 @@ export async function handleReadFile(args, spinnerCallback = null) {
             if (fh) await fh.close();
         }
     } catch (error) {
-        if (spinnerCallback) spinnerCallback('fail', `Error reading file: ${error.message}`);
+        if (progressCallback) progressCallback('fail', `Error reading file: ${error.message}`);
         throw error;
     }
 }
 
-export async function handleListDir(args = {}, spinnerCallback = null) {
+export async function handleListDir(args = {}, progressCallback = null) {
     try {
-        if (spinnerCallback) spinnerCallback('start', 'Listing directory...');
+        if (progressCallback) progressCallback('start', 'Listing directory...');
         
         const {
             dir = ".",
@@ -217,7 +217,7 @@ export async function handleListDir(args = {}, spinnerCallback = null) {
             }
         }
         
-        if (spinnerCallback) spinnerCallback('succeed', 'Directory listed successfully');
+        if (progressCallback) progressCallback('succeed', 'Directory listed successfully');
         
         return {
             ok: true,
@@ -227,14 +227,14 @@ export async function handleListDir(args = {}, spinnerCallback = null) {
             entries: results
         };
     } catch (error) {
-        if (spinnerCallback) spinnerCallback('fail', `Error listing directory: ${error.message}`);
+        if (progressCallback) progressCallback('fail', `Error listing directory: ${error.message}`);
         throw error;
     }
 }
 
-export async function handleWriteFile(args = {}, spinnerCallback = null) {
+export async function handleWriteFile(args = {}, progressCallback = null) {
     try {
-        if (spinnerCallback) spinnerCallback('start', 'Writing file...');
+        if (progressCallback) progressCallback('start', 'Writing file...');
         
         const {
             filepath,
@@ -312,7 +312,7 @@ export async function handleWriteFile(args = {}, spinnerCallback = null) {
         await fs.rename(tmp, abs);
         const stat = await fs.stat(abs);
         
-        if (spinnerCallback) spinnerCallback('succeed', 'File written successfully');
+        if (progressCallback) progressCallback('succeed', 'File written successfully');
         
         return {
             ok: true,
@@ -323,20 +323,20 @@ export async function handleWriteFile(args = {}, spinnerCallback = null) {
             backup: make_backup ? (await exists(abs + ".bak")) : false
         };
     } catch (error) {
-        if (spinnerCallback) spinnerCallback('fail', `Error writing file: ${error.message}`);
+        if (progressCallback) progressCallback('fail', `Error writing file: ${error.message}`);
         throw error;
     }
 }
 
 // Tool execution dispatcher
-export async function executeFileTool(toolName, args, spinnerCallback = null) {
+export async function executeFileTool(toolName, args, progressCallback = null) {
     switch (toolName) {
         case "read_file":
-            return await handleReadFile(args, spinnerCallback);
+            return await handleReadFile(args, progressCallback);
         case "list_dir":
-            return await handleListDir(args, spinnerCallback);
+            return await handleListDir(args, progressCallback);
         case "write_file":
-            return await handleWriteFile(args, spinnerCallback);
+            return await handleWriteFile(args, progressCallback);
         default:
             throw new Error(`Unknown tool: ${toolName}`);
     }
