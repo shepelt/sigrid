@@ -7,6 +7,21 @@ import {
 
 let client = null;
 
+// System prompt constants
+const PURE_MODE_INSTRUCTIONS = [
+    "Respond with only the main content, no explanations.",
+    "Create content suitable for this OS and environment.",
+    "Content should be displayed to chat and no file should be written.",
+    "Do not add any preamble or postamble.",
+    "Do not include explanations, markdown formatting, code fences, or comment. Content should be executable."
+];
+
+const TOOLING_INSTRUCTION = 
+    "You can call tools `list_dir` (browse), `read_file` (preview), and `write_file` (save). " +
+    "Stay within the sandbox. Write only small UTF-8 text files. For large edits, ask for a narrower scope.";
+
+const DEFAULT_MODEL = "gpt-4o";
+
 /**
  * Initialize OpenAI client
  * @param {string} apiKey - OpenAI API key
@@ -80,7 +95,7 @@ export function extractText(r) {
  * @param {Object} opts - Options
  * @param {OpenAI} opts.client - Custom OpenAI client (optional, uses initialized client by default)
  * @param {string} opts.model - Model name (default: "gpt-4o")
- * @param {string|string[]} opts.instructions - System instruction(s). Can be a single string or array of strings
+ * @param {string|string[]} opts.instructions - System instruction(s)
  * @param {boolean} opts.conversation - Enable conversation mode
  * @param {string} opts.conversationID - Existing conversation ID
  * @param {boolean} opts.pure - Pure output mode (no explanations)
@@ -98,7 +113,7 @@ export async function execute(prompt, opts = {}) {
         opts.conversationID = conv.id;
     }
     
-    // Add custom instruction(s)
+    // Add system instructions
     if (opts.instructions) {
         const instructions = Array.isArray(opts.instructions) 
             ? opts.instructions 
@@ -109,32 +124,15 @@ export async function execute(prompt, opts = {}) {
         }
     }
     
-    // Deprecated: support old 'instruction' for backward compatibility
-    if (opts.instruction && !opts.instructions) {
-        const instructions = Array.isArray(opts.instruction) 
-            ? opts.instruction 
-            : [opts.instruction];
-        
-        for (const inst of instructions) {
+    // Pure mode instructions
+    if (opts.pure) {
+        for (const inst of PURE_MODE_INSTRUCTIONS) {
             messages.push({ role: "system", content: inst });
         }
     }
     
-    // Pure mode instructions
-    if (opts.pure) {
-        messages.push({ role: "system", content: "Respond with only the main content, no explanations." });
-        messages.push({ role: "system", content: "Create content suitable for this OS and environment." });
-        messages.push({ role: "system", content: "Content should be displayed to chat and no file should be written." });
-        messages.push({ role: "system", content: "Do not add any preamble or postamble." });
-        messages.push({ role: "system", content: "Do not include explanations, markdown formatting, code fences, or comment. Content should be executable." });
-    }
-    
-    // Add tooling prompt
-    messages.push({
-        role: "system",
-        content: "You can call tools `list_dir` (browse), `read_file` (preview), and `write_file` (save). " +
-                 "Stay within the sandbox. Write only small UTF-8 text files. For large edits, ask for a narrower scope."
-    });
+    // Add tooling instruction
+    messages.push({ role: "system", content: TOOLING_INSTRUCTION });
     
     messages.push({ role: "user", content: prompt });
     
@@ -144,8 +142,10 @@ export async function execute(prompt, opts = {}) {
     }
     
     // Initial API call
+    const model = opts.model || DEFAULT_MODEL;
+    
     let response = await apiClient.responses.create({
-        model: opts.model || "gpt-4o",
+        model,
         input: messages,
         conversation: opts.conversationID,
         tools: fileTools,
@@ -197,7 +197,7 @@ export async function execute(prompt, opts = {}) {
         }
         
         response = await apiClient.responses.create({
-            model: opts.model || "gpt-4o-mini",
+            model,
             input: messages,
             conversation: response.conversation,
             tools: fileTools,
