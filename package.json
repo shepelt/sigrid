@@ -1,11 +1,16 @@
 {
   "name": "sigrid",
   "version": "1.0.0",
-  "description": "",
+  "description": "LLM CLI agent with file tooling",
   "license": "ISC",
   "author": "",
   "type": "module",
-  "main": "llm.js",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./llm": "./llm.js",
+    "./filetooling": "./filetooling.js"
+  },
   "bin": {
     "sigrid": "bin/sigrid.js"
   },
