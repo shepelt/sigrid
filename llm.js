@@ -9,16 +9,19 @@ let client = null;
 
 // System prompt constants
 const PURE_MODE_INSTRUCTIONS = [
-    "Respond with only the main content, no explanations.",
-    "Create content suitable for this OS and environment.",
-    "Content should be displayed to chat and no file should be written.",
+    "Respond with only the requested content, no explanations or commentary.",
     "Do not add any preamble or postamble.",
-    "Do not include explanations, markdown formatting, code fences, or comment. Content should be executable."
+    "Do not include markdown code fences (```) or formatting.",
+    "Output should be raw content, ready to use directly."
 ];
 
 const TOOLING_INSTRUCTION = 
     "You can call tools `list_dir` (browse), `read_file` (preview), and `write_file` (save). " +
     "Stay within the sandbox. Write only small UTF-8 text files. For large edits, ask for a narrower scope.";
+
+const PURE_MODE_TOOLING_INSTRUCTION =
+    "You can call tools `list_dir` (browse) and `read_file` (preview) to inspect files. " +
+    "Do not write any files - output content directly to chat.";
 
 const DEFAULT_MODEL = "gpt-4o";
 
@@ -132,7 +135,8 @@ export async function execute(prompt, opts = {}) {
     }
     
     // Add tooling instruction
-    messages.push({ role: "system", content: TOOLING_INSTRUCTION });
+    const toolingInstruction = opts.pure ? PURE_MODE_TOOLING_INSTRUCTION : TOOLING_INSTRUCTION;
+    messages.push({ role: "system", content: toolingInstruction });
     
     messages.push({ role: "user", content: prompt });
     
@@ -144,11 +148,16 @@ export async function execute(prompt, opts = {}) {
     // Initial API call
     const model = opts.model || DEFAULT_MODEL;
     
+    // Select tools based on pure mode
+    const availableTools = opts.pure 
+        ? fileTools.filter(tool => tool.name !== 'write_file')
+        : fileTools;
+    
     let response = await apiClient.responses.create({
         model,
         input: messages,
         conversation: opts.conversationID,
-        tools: fileTools,
+        tools: availableTools,
         tool_choice: "auto"
     });
     
@@ -200,7 +209,7 @@ export async function execute(prompt, opts = {}) {
             model,
             input: messages,
             conversation: response.conversation,
-            tools: fileTools,
+            tools: availableTools,
             tool_choice: "auto"
         });
         
