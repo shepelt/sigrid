@@ -5,7 +5,10 @@
   "license": "ISC",
   "author": "",
   "type": "module",
-  "main": "index.js",
+  "main": "llm.js",
+  "bin": {
+    "sigrid": "bin/sigrid.js"
+  },
   "scripts": {
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch",
@@ -27,7 +30,7 @@
     ],
     "collectCoverageFrom": [
       "*.js",
-      "!index.js",
+      "!chat.js",
       "!*.test.js"
     ],
     "coverageDirectory": "coverage",
