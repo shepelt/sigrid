@@ -10,6 +10,7 @@ let client = null;
 // System prompt constants
 const PURE_MODE_INSTRUCTIONS = [
     "Respond with only the requested content, no explanations or commentary.",
+    "Generate content appropriate for the current operating system.",
     "Do not add any preamble or postamble.",
     "Do not include markdown code fences (```) or formatting.",
     "Output should be raw content, ready to use directly."
