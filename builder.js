@@ -78,6 +78,16 @@ export class SigridBuilder {
     }
 
     /**
+     * Set workspace directory (overrides global sandboxRoot)
+     * @param {string} path - Workspace directory path
+     * @returns {SigridBuilder} this for chaining
+     */
+    workspace(path) {
+        this.options.workspace = path;
+        return this;
+    }
+
+    /**
      * Execute the prompt with accumulated options
      * @param {string} prompt - User prompt
      * @param {Object} additionalOpts - Additional options to merge

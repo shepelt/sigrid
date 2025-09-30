@@ -201,6 +201,31 @@ describe('Builder Integration Tests', () => {
         }, 60000);
     });
 
+    describe('Workspace', () => {
+        testFn('should use workspace instead of global sandbox', async () => {
+            // Set global sandbox to tempDir
+            setSandboxRoot(tempDir);
+
+            // Create a different workspace
+            const workspace2 = await fs.mkdtemp(path.join(os.tmpdir(), 'sigrid-workspace2-'));
+            await fs.writeFile(path.join(workspace2, 'workspace-test.txt'), 'in workspace2');
+
+            // Use workspace (should override global sandbox)
+            const result = await sigrid()
+                .workspace(workspace2)
+                .model('gpt-4o-mini')
+                .execute('List all files in the current directory');
+
+            // Should see file from workspace2, not tempDir
+            expect(result.content.toLowerCase()).toContain('workspace-test.txt');
+            // Should NOT see files from global tempDir sandbox
+            expect(result.content.toLowerCase()).not.toContain('builder-test.txt');
+
+            // Cleanup
+            await fs.rm(workspace2, { recursive: true, force: true });
+        }, 30000);
+    });
+
     describe('Backward Compatibility', () => {
         testFn('should support original execute API', async () => {
             const result = await sigrid.execute('Say "legacy" and nothing else', {

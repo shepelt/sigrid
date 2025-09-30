@@ -174,8 +174,8 @@ export async function execute(prompt, opts = {}) {
         for (const fc of toolCalls) {
             try {
                 const args = JSON.parse(fc.arguments || "{}");
-                const toolResult = await executeFileTool(fc.name, args, opts.progressCallback);
-                
+                const toolResult = await executeFileTool(fc.name, args, opts.progressCallback, opts.workspace);
+
                 messages.push({
                     type: "function_call",
                     name: fc.name,

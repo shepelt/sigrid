@@ -13,7 +13,7 @@ const WRITE_ALLOWED_EXTS = [
 ];
 
 // Global sandbox root - will be set by setSandboxRoot
-let sandboxRoot = path.resolve(process.cwd());
+let sandboxRootPath = path.resolve(process.cwd());
 
 // Tool definitions
 export const readFileTool = {
@@ -75,19 +75,25 @@ export const writeFileTool = {
 
 // Utility functions
 export function setSandboxRoot(root) {
-    sandboxRoot = path.resolve(root);
+    sandboxRootPath = path.resolve(root);
 }
 
 export function getSandboxRoot() {
-    return sandboxRoot;
+    return sandboxRootPath;
 }
 
-function assertInsideSandbox(p) {
-    const abs = path.resolve(sandboxRoot, p);
-    if (!abs.startsWith(sandboxRoot + path.sep) && abs !== sandboxRoot) {
+function assertInsideSandbox(relativePath, workspacePath) {
+    // Use workspacePath if provided, otherwise fall back to global sandboxRootPath
+    let effectiveRootPath = sandboxRootPath;
+    if (workspacePath != null) {
+        effectiveRootPath = path.resolve(workspacePath);
+    }
+
+    const absolutePath = path.resolve(effectiveRootPath, relativePath);
+    if (!absolutePath.startsWith(effectiveRootPath + path.sep) && absolutePath !== effectiveRootPath) {
         throw new Error("Access outside sandbox is not allowed.");
     }
-    return abs;
+    return absolutePath;
 }
 
 function toEntry(abs, rel, st) {
@@ -134,27 +140,28 @@ async function exists(p) {
 }
 
 // Tool handlers with progress callback support
-export async function handleReadFile(args, progressCallback = null) {
+export async function handleReadFile(args, progressCallback = null, workspacePath = null) {
     const { filepath, encoding = "utf-8", start = 0, length = MAX_BYTES } = args;
-    
+
     try {
         if (progressCallback) progressCallback('start', 'Reading file...');
-        
-        const abs = assertInsideSandbox(filepath);
+
+        const abs = assertInsideSandbox(filepath, workspacePath);
         const stat = await fs.stat(abs);
         const end = Math.min(start + length, stat.size);
         const fh = await fs.open(abs, "r");
-        
+
         try {
             const buf = Buffer.alloc(end - start);
             await fh.read(buf, 0, buf.length, start);
             const text = buf.toString(encoding);
-            
+
             if (progressCallback) progressCallback('succeed', 'File read successfully');
-            
+
+            const effectiveRootPath = workspacePath != null ? path.resolve(workspacePath) : sandboxRootPath;
             return {
                 ok: true,
-                path: path.relative(sandboxRoot, abs),
+                path: path.relative(effectiveRootPath, abs),
                 size: stat.size,
                 start,
                 end,
@@ -170,10 +177,10 @@ export async function handleReadFile(args, progressCallback = null) {
     }
 }
 
-export async function handleListDir(args = {}, progressCallback = null) {
+export async function handleListDir(args = {}, progressCallback = null, workspacePath = null) {
     try {
         if (progressCallback) progressCallback('start', 'Listing directory...');
-        
+
         const {
             dir = ".",
             recursive = false,
@@ -181,12 +188,13 @@ export async function handleListDir(args = {}, progressCallback = null) {
             include_hidden = false,
             limit = 200
         } = args;
-        
-        const absRoot = assertInsideSandbox(dir);
+
+        const absRoot = assertInsideSandbox(dir, workspacePath);
         const maxDepth = Math.min(max_depth, LIST_MAX_DEPTH);
         const cap = Math.min(limit, LIST_MAX_ENTRIES);
         const results = [];
-        const q = [{ abs: absRoot, rel: path.relative(sandboxRoot, absRoot) || ".", depth: 0 }];
+        const effectiveRootPath = workspacePath != null ? path.resolve(workspacePath) : sandboxRootPath;
+        const q = [{ abs: absRoot, rel: path.relative(effectiveRootPath, absRoot) || ".", depth: 0 }];
         
         while (q.length && results.length < cap) {
             const { abs, rel, depth } = q.shift();
@@ -204,24 +212,24 @@ export async function handleListDir(args = {}, progressCallback = null) {
                 if (results.length >= cap) break;
                 const name = dirent.name;
                 if (!include_hidden && name.startsWith(".")) continue;
-                
+
                 const childAbs = path.join(abs, name);
-                const childRel = path.relative(sandboxRoot, childAbs);
+                const childRel = path.relative(effectiveRootPath, childAbs);
                 const st = await fs.lstat(childAbs);
                 results.push(toEntry(childAbs, childRel, st));
-                
+
                 // 재귀: symlink는 타지 않고, 디렉터리만 큐에 추가
                 if (recursive && dirent.isDirectory() && depth + 1 < maxDepth) {
                     q.push({ abs: childAbs, rel: childRel, depth: depth + 1 });
                 }
             }
         }
-        
+
         if (progressCallback) progressCallback('succeed', 'Directory listed successfully');
-        
+
         return {
             ok: true,
-            root: path.relative(sandboxRoot, absRoot) || ".",
+            root: path.relative(effectiveRootPath, absRoot) || ".",
             count: results.length,
             truncated: results.length >= cap,
             entries: results
@@ -232,10 +240,10 @@ export async function handleListDir(args = {}, progressCallback = null) {
     }
 }
 
-export async function handleWriteFile(args = {}, progressCallback = null) {
+export async function handleWriteFile(args = {}, progressCallback = null, workspacePath = null) {
     try {
         if (progressCallback) progressCallback('start', 'Writing file...');
-        
+
         const {
             filepath,
             content,
@@ -246,12 +254,12 @@ export async function handleWriteFile(args = {}, progressCallback = null) {
             eol = "auto",
             chmod
         } = args ?? {};
-        
+
         if (typeof filepath !== "string" || typeof content !== "string") {
             throw new Error("Invalid 'filepath' or 'content'");
         }
-        
-        const abs = assertInsideSandbox(filepath);
+
+        const abs = assertInsideSandbox(filepath, workspacePath);
         
         // 확장자 제한
         const ext = path.extname(abs).toLowerCase();
@@ -311,12 +319,13 @@ export async function handleWriteFile(args = {}, progressCallback = null) {
         
         await fs.rename(tmp, abs);
         const stat = await fs.stat(abs);
-        
+
         if (progressCallback) progressCallback('succeed', 'File written successfully');
-        
+
+        const effectiveRootPath = workspacePath != null ? path.resolve(workspacePath) : sandboxRootPath;
         return {
             ok: true,
-            path: path.relative(sandboxRoot, abs),
+            path: path.relative(effectiveRootPath, abs),
             size: stat.size,
             mtimeMs: stat.mtimeMs,
             mode,
@@ -329,14 +338,14 @@ export async function handleWriteFile(args = {}, progressCallback = null) {
 }
 
 // Tool execution dispatcher
-export async function executeFileTool(toolName, args, progressCallback = null) {
+export async function executeFileTool(toolName, args, progressCallback = null, workspacePath = null) {
     switch (toolName) {
         case "read_file":
-            return await handleReadFile(args, progressCallback);
+            return await handleReadFile(args, progressCallback, workspacePath);
         case "list_dir":
-            return await handleListDir(args, progressCallback);
+            return await handleListDir(args, progressCallback, workspacePath);
         case "write_file":
-            return await handleWriteFile(args, progressCallback);
+            return await handleWriteFile(args, progressCallback, workspacePath);
         default:
             throw new Error(`Unknown tool: ${toolName}`);
     }
