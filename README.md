@@ -45,7 +45,7 @@ echo "Hello world" | sigrid "Translate to Spanish"
 #### CLI Options
 
 - `-p, --pure` - Pure output mode (no explanations or markdown)
-- `-m, --model <text>` - Model to use (default: gpt-4o)
+- `-m, --model <text>` - Model to use (default: gpt-5-mini)
 - `-i, --instruction <text>` - Add custom system instruction
 - `-e, --environment <text>` - Change sandbox directory
 - `-s, --stream` - Stream output (planned)
@@ -153,7 +153,7 @@ console.log(result.conversationID);
 #### API Reference
 
 **Fluent Builder Methods:**
-- `.model(name)` - Set the model (e.g., 'gpt-4o', 'gpt-4o-mini')
+- `.model(name)` - Set the model (e.g., 'gpt-5-mini', 'gpt-4o-mini')
 - `.instruction(text)` - Add a single instruction (chainable)
 - `.instructions(array|string)` - Set instructions (string or array)
 - `.pure()` - Enable pure output mode (no explanations)
@@ -170,7 +170,7 @@ console.log(result.conversationID);
 **Execute Options:**
 ```javascript
 {
-  model: 'gpt-4o',              // Model name
+  model: 'gpt-5-mini',          // Model name
   instructions: [],             // Array or string of instructions
   pure: false,                  // Pure output mode
   conversation: false,          // Enable conversation mode
