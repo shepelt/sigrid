@@ -24,7 +24,7 @@ const PURE_MODE_TOOLING_INSTRUCTION =
     "You can call tools `list_dir` (browse) and `read_file` (preview) to inspect files. " +
     "Do not write any files - output content directly to chat.";
 
-const DEFAULT_MODEL = "gpt-4o";
+const DEFAULT_MODEL = "gpt-5-mini";
 
 /**
  * Initialize OpenAI client
@@ -98,7 +98,7 @@ export function extractText(r) {
  * @param {string} prompt - User prompt
  * @param {Object} opts - Options
  * @param {OpenAI} opts.client - Custom OpenAI client (optional, uses initialized client by default)
- * @param {string} opts.model - Model name (default: "gpt-4o")
+ * @param {string} opts.model - Model name (default: "gpt-5-mini")
  * @param {string|string[]} opts.instructions - System instruction(s)
  * @param {boolean} opts.conversation - Enable conversation mode
  * @param {string} opts.conversationID - Existing conversation ID

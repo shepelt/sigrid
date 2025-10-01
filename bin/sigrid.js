@@ -101,7 +101,7 @@ program
     .option("-s, --stream", "stream output")
     .option("-i, --instruction <text>", "custom system instruction")
     .option("-b, --bootstrapping", "operating in self-improvement mode")
-    .option("-m, --model <text>", "model to use (default: gpt-4o)")
+    .option("-m, --model <text>", "model to use (default: gpt-5-mini)")
     .action(async (words, opts) => {
         // Change sandbox directory if specified
         if (opts.environment) {
