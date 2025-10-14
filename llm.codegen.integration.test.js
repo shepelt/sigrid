@@ -1,11 +1,11 @@
 import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
 import 'dotenv/config';
-import { initializeClient, execute, setSandboxRoot } from './llm.js';
+import { initializeClient } from './llm.js';
+import { createWorkspace } from './workspace.js';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
-import * as tar from 'tar';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -21,60 +21,55 @@ const __dirname = dirname(__filename);
 describe('Code Generation Integration Tests', () => {
     const hasApiKey = !!process.env.OPENAI_API_KEY;
     const testFn = hasApiKey ? test : test.skip;
-    
-    let tempDir;
+
+    let workspace;
     let aiRules;
     const scaffoldPath = path.join(__dirname, 'test-fixtures', 'react-scaffold.tar.gz');
     
     beforeAll(async () => {
         if (hasApiKey) {
             initializeClient(process.env.OPENAI_API_KEY);
-            
-            // Create temporary directory for test project
-            tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sigrid-react-'));
-            
-            // Extract scaffold
-            console.log(`Extracting scaffold to: ${tempDir}`);
-            await tar.x({
-                file: scaffoldPath,
-                cwd: tempDir,
-                strip: 1
-            });
-            
-            setSandboxRoot(tempDir);
-            console.log(`Test project ready at: ${tempDir}`);
-            
+
+            // Load scaffold tarball
+            console.log(`Loading scaffold from: ${scaffoldPath}`);
+            const tarballBuffer = await fs.readFile(scaffoldPath);
+
+            // Create workspace using Workspace API
+            console.log('Creating workspace...');
+            workspace = await createWorkspace(tarballBuffer, { strip: 1 });
+            console.log(`✓ Workspace created at: ${workspace.path}`);
+
             // Install dependencies
             console.log('Installing dependencies...');
             execSync('npm install', {
-                cwd: tempDir,
+                cwd: workspace.path,
                 stdio: 'inherit'
             });
             console.log('✓ Dependencies installed');
-            
-            // Read AI_RULES.md from scaffold
-            const aiRulesPath = path.join(tempDir, 'AI_RULES.md');
+
+            // Read AI_RULES.md from workspace
+            const aiRulesPath = path.join(workspace.path, 'AI_RULES.md');
             aiRules = await fs.readFile(aiRulesPath, 'utf-8');
             console.log('✓ AI_RULES.md loaded');
         }
     }, 60000); // 60 second timeout for setup
     
     afterAll(async () => {
-        // Cleanup temporary directory
-        if (tempDir) {
+        // Cleanup workspace
+        if (workspace) {
             if (process.env.KEEP_TEST_DIR) {
-                console.log(`\n⚠️  Test directory preserved at: ${tempDir}`);
+                console.log(`\n⚠️  Test directory preserved at: ${workspace.path}`);
                 console.log(`To run the app manually:`);
-                console.log(`  cd ${tempDir}`);
+                console.log(`  cd ${workspace.path}`);
                 console.log(`  npm run dev`);
                 console.log(`\nTo build:`);
-                console.log(`  cd ${tempDir}`);
+                console.log(`  cd ${workspace.path}`);
                 console.log(`  npm run build`);
                 console.log(`\nTo clean up later:`);
-                console.log(`  rm -rf ${tempDir}\n`);
+                console.log(`  rm -rf ${workspace.path}\n`);
             } else {
-                console.log(`Cleaning up: ${tempDir}`);
-                await fs.rm(tempDir, { recursive: true, force: true });
+                console.log(`Cleaning up workspace: ${workspace.path}`);
+                await workspace.delete();
             }
         }
     });
@@ -88,7 +83,7 @@ describe('Code Generation Integration Tests', () => {
     
     describe('React Component Generation', () => {
         testFn('should generate a simple Button component', async () => {
-            const result = await execute(
+            const result = await workspace.execute(
                 'Create a Button component in src/components/Button.tsx. ' +
                 'It should accept children and onClick props.',
                 {
@@ -100,8 +95,8 @@ describe('Code Generation Integration Tests', () => {
                     model: 'gpt-4o-mini'
                 }
             );
-            
-            const buttonPath = path.join(tempDir, 'src', 'components', 'Button.tsx');
+
+            const buttonPath = path.join(workspace.path, 'src', 'components', 'Button.tsx');
             const exists = await fs.access(buttonPath).then(() => true).catch(() => false);
             
             if (!exists) {
@@ -126,7 +121,7 @@ describe('Code Generation Integration Tests', () => {
         }, 60000);
         
         testFn('should generate a component with state', async () => {
-            const result = await execute(
+            const result = await workspace.execute(
                 'Create a Counter component in src/components/Counter.tsx with increment and decrement buttons.',
                 {
                     instructions: [
@@ -136,8 +131,8 @@ describe('Code Generation Integration Tests', () => {
                     model: 'gpt-4o-mini'
                 }
             );
-            
-            const counterPath = path.join(tempDir, 'src', 'components', 'Counter.tsx');
+
+            const counterPath = path.join(workspace.path, 'src', 'components', 'Counter.tsx');
             const exists = await fs.access(counterPath).then(() => true).catch(() => false);
             
             if (!exists) {
@@ -159,9 +154,9 @@ describe('Code Generation Integration Tests', () => {
         }, 60000);
         
         testFn('should read existing files and create related component', async () => {
-            await fs.mkdir(path.join(tempDir, 'src', 'components'), { recursive: true });
+            await fs.mkdir(path.join(workspace.path, 'src', 'components'), { recursive: true });
             await fs.writeFile(
-                path.join(tempDir, 'src', 'components', 'Card.tsx'),
+                path.join(workspace.path, 'src', 'components', 'Card.tsx'),
                 `interface CardProps {
   title: string;
   children: React.ReactNode;
@@ -176,8 +171,8 @@ export default function Card({ title, children }: CardProps) {
   );
 }`
             );
-            
-            const result = await execute(
+
+            const result = await workspace.execute(
                 'Read the Card component and create a CardList component in src/components/CardList.tsx that renders multiple Cards.',
                 {
                     instructions: [
@@ -188,8 +183,8 @@ export default function Card({ title, children }: CardProps) {
                     model: 'gpt-4o-mini'
                 }
             );
-            
-            const cardListPath = path.join(tempDir, 'src', 'components', 'CardList.tsx');
+
+            const cardListPath = path.join(workspace.path, 'src', 'components', 'CardList.tsx');
             const exists = await fs.access(cardListPath).then(() => true).catch(() => false);
             
             if (!exists) {
@@ -213,7 +208,7 @@ export default function Card({ title, children }: CardProps) {
     
     describe('File Structure Operations', () => {
         testFn('should list project structure', async () => {
-            const result = await execute(
+            const result = await workspace.execute(
                 'List all files in the src directory',
                 {
                     instructions: [aiRules],
@@ -225,7 +220,7 @@ export default function Card({ title, children }: CardProps) {
         }, 30000);
         
         testFn('should read and summarize package.json', async () => {
-            const result = await execute(
+            const result = await workspace.execute(
                 'Read package.json and tell me what main dependencies are used',
                 {
                     instructions: [aiRules],
@@ -245,7 +240,7 @@ export default function Card({ title, children }: CardProps) {
             // Step 1: Create the Todo List page
             console.log('[Step 1/4] Creating TodoList page...');
             const step1Start = Date.now();
-            const createPageResult = await execute(
+            const createPageResult = await workspace.execute(
                 'Create a Todo List page in src/pages/TodoList.tsx with the following features:\n' +
                 '- Display a list of todos\n' +
                 '- Add new todo with an input field and button\n' +
@@ -261,8 +256,8 @@ export default function Card({ title, children }: CardProps) {
                     model: 'gpt-4o-mini'
                 }
             );
-            
-            const todoPath = path.join(tempDir, 'src', 'pages', 'TodoList.tsx');
+
+            const todoPath = path.join(workspace.path, 'src', 'pages', 'TodoList.tsx');
             const pageExists = await fs.access(todoPath).then(() => true).catch(() => false);
             
             if (!pageExists) {
@@ -292,7 +287,7 @@ export default function Card({ title, children }: CardProps) {
             // Step 2: Add route to App.tsx
             console.log('[Step 2/4] Adding route to App.tsx...');
             const step2Start = Date.now();
-            const addRouteResult = await execute(
+            const addRouteResult = await workspace.execute(
                 'Read src/App.tsx and add a new route for the TodoList page at /todos. ' +
                 'Import the TodoList component and add it to the router configuration.',
                 {
@@ -305,8 +300,8 @@ export default function Card({ title, children }: CardProps) {
                     model: 'gpt-4o-mini'
                 }
             );
-            
-            const appPath = path.join(tempDir, 'src', 'App.tsx');
+
+            const appPath = path.join(workspace.path, 'src', 'App.tsx');
             const appExists = await fs.access(appPath).then(() => true).catch(() => false);
             expect(appExists).toBe(true);
             
@@ -327,7 +322,7 @@ export default function Card({ title, children }: CardProps) {
             // Step 3: Update Index page
             console.log('[Step 3/4] Adding navigation link to Index page...');
             const step3Start = Date.now();
-            const updateIndexResult = await execute(
+            const updateIndexResult = await workspace.execute(
                 'Read src/pages/Index.tsx and add a navigation link or button to the TodoList page (/todos). ' +
                 'Make it prominent and easy to find on the page.',
                 {
@@ -340,8 +335,8 @@ export default function Card({ title, children }: CardProps) {
                     model: 'gpt-4o-mini'
                 }
             );
-            
-            const indexPath = path.join(tempDir, 'src', 'pages', 'Index.tsx');
+
+            const indexPath = path.join(workspace.path, 'src', 'pages', 'Index.tsx');
             const indexExists = await fs.access(indexPath).then(() => true).catch(() => false);
             expect(indexExists).toBe(true);
             
@@ -363,14 +358,14 @@ export default function Card({ title, children }: CardProps) {
             const step4Start = Date.now();
             try {
                 execSync('npm run build', {
-                    cwd: tempDir,
+                    cwd: workspace.path,
                     stdio: 'pipe',
                     timeout: 60000
                 });
                 const step4Time = ((Date.now() - step4Start) / 1000).toFixed(1);
                 console.log(`✓ Build successful! [${step4Time}s]`);
-                
-                const distPath = path.join(tempDir, 'dist');
+
+                const distPath = path.join(workspace.path, 'dist');
                 const distExists = await fs.access(distPath).then(() => true).catch(() => false);
                 expect(distExists).toBe(true);
                 
@@ -419,7 +414,7 @@ export default function Card({ title, children }: CardProps) {
     
     describe('Component Syntax Validation', () => {
         testFn('should generate syntactically valid TSX', async () => {
-            await execute(
+            await workspace.execute(
                 'Create a simple HelloWorld component in src/components/HelloWorld.tsx',
                 {
                     instructions: [
@@ -429,8 +424,8 @@ export default function Card({ title, children }: CardProps) {
                     model: 'gpt-4o-mini'
                 }
             );
-            
-            const helloPath = path.join(tempDir, 'src', 'components', 'HelloWorld.tsx');
+
+            const helloPath = path.join(workspace.path, 'src', 'components', 'HelloWorld.tsx');
             const content = await fs.readFile(helloPath, 'utf-8');
             
             expect(content).toMatch(/export/);

@@ -20,6 +20,12 @@ import {
     executeFileTool
 } from './filetooling.js';
 
+import {
+    createWorkspace,
+    openWorkspace,
+    Workspace
+} from './workspace.js';
+
 // Factory function that creates a new builder instance
 function sigrid() {
     return new SigridBuilder();
@@ -35,6 +41,9 @@ sigrid.setSandboxRoot = setSandboxRoot;
 sigrid.getSandboxRoot = getSandboxRoot;
 sigrid.executeFileTool = executeFileTool;
 sigrid.fileTools = fileTools;
+sigrid.createWorkspace = createWorkspace;
+sigrid.openWorkspace = openWorkspace;
+sigrid.Workspace = Workspace;
 
 // Default export: factory function with attached methods
 export default sigrid;
@@ -49,5 +58,8 @@ export {
     fileTools,
     setSandboxRoot,
     getSandboxRoot,
-    executeFileTool
+    executeFileTool,
+    createWorkspace,
+    openWorkspace,
+    Workspace
 };
