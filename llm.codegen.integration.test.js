@@ -25,7 +25,7 @@ describe('Code Generation Integration Tests', () => {
     let workspace;
     let aiRules;
     const scaffoldPath = path.join(__dirname, 'test-fixtures', 'react-scaffold.tar.gz');
-    
+
     beforeAll(async () => {
         if (hasApiKey) {
             initializeClient(process.env.OPENAI_API_KEY);
@@ -36,7 +36,7 @@ describe('Code Generation Integration Tests', () => {
 
             // Create workspace using Workspace API
             console.log('Creating workspace...');
-            workspace = await createWorkspace(tarballBuffer, { strip: 1 });
+            workspace = await createWorkspace(tarballBuffer);
             console.log(`✓ Workspace created at: ${workspace.path}`);
 
             // Install dependencies
@@ -53,7 +53,7 @@ describe('Code Generation Integration Tests', () => {
             console.log('✓ AI_RULES.md loaded');
         }
     }, 60000); // 60 second timeout for setup
-    
+
     afterAll(async () => {
         // Cleanup workspace
         if (workspace) {
@@ -73,14 +73,14 @@ describe('Code Generation Integration Tests', () => {
             }
         }
     });
-    
+
     if (!hasApiKey) {
         test('skipping code generation tests - no OPENAI_API_KEY', () => {
             console.log('ℹ️  Set OPENAI_API_KEY to run code generation tests');
             expect(true).toBe(true);
         });
     }
-    
+
     describe('React Component Generation', () => {
         testFn('should generate a simple Button component', async () => {
             const result = await workspace.execute(
@@ -98,13 +98,13 @@ describe('Code Generation Integration Tests', () => {
 
             const buttonPath = path.join(workspace.path, 'src', 'components', 'Button.tsx');
             const exists = await fs.access(buttonPath).then(() => true).catch(() => false);
-            
+
             if (!exists) {
                 console.log('❌ Button component not created');
                 console.log('LLM Response:', result.content);
             }
             expect(exists).toBe(true);
-            
+
             if (exists) {
                 const content = await fs.readFile(buttonPath, 'utf-8');
                 try {
@@ -119,7 +119,7 @@ describe('Code Generation Integration Tests', () => {
                 }
             }
         }, 60000);
-        
+
         testFn('should generate a component with state', async () => {
             const result = await workspace.execute(
                 'Create a Counter component in src/components/Counter.tsx with increment and decrement buttons.',
@@ -134,13 +134,13 @@ describe('Code Generation Integration Tests', () => {
 
             const counterPath = path.join(workspace.path, 'src', 'components', 'Counter.tsx');
             const exists = await fs.access(counterPath).then(() => true).catch(() => false);
-            
+
             if (!exists) {
                 console.log('❌ Counter component not created');
                 console.log('LLM Response:', result.content);
             }
             expect(exists).toBe(true);
-            
+
             if (exists) {
                 const content = await fs.readFile(counterPath, 'utf-8');
                 try {
@@ -152,7 +152,7 @@ describe('Code Generation Integration Tests', () => {
                 }
             }
         }, 60000);
-        
+
         testFn('should read existing files and create related component', async () => {
             await fs.mkdir(path.join(workspace.path, 'src', 'components'), { recursive: true });
             await fs.writeFile(
@@ -186,13 +186,13 @@ export default function Card({ title, children }: CardProps) {
 
             const cardListPath = path.join(workspace.path, 'src', 'components', 'CardList.tsx');
             const exists = await fs.access(cardListPath).then(() => true).catch(() => false);
-            
+
             if (!exists) {
                 console.log('❌ CardList component not created');
                 console.log('LLM Response:', result.content);
             }
             expect(exists).toBe(true);
-            
+
             if (exists) {
                 const content = await fs.readFile(cardListPath, 'utf-8');
                 try {
@@ -205,7 +205,7 @@ export default function Card({ title, children }: CardProps) {
             }
         }, 60000);
     });
-    
+
     describe('File Structure Operations', () => {
         testFn('should list project structure', async () => {
             const result = await workspace.execute(
@@ -215,10 +215,10 @@ export default function Card({ title, children }: CardProps) {
                     model: 'gpt-4o-mini'
                 }
             );
-            
+
             expect(result.content.toLowerCase()).toMatch(/src|main|app/);
         }, 30000);
-        
+
         testFn('should read and summarize package.json', async () => {
             const result = await workspace.execute(
                 'Read package.json and tell me what main dependencies are used',
@@ -227,16 +227,16 @@ export default function Card({ title, children }: CardProps) {
                     model: 'gpt-4o-mini'
                 }
             );
-            
+
             expect(result.content.toLowerCase()).toMatch(/react|vite/);
         }, 60000); // Increased timeout to 60s
     });
-    
+
     describe('Full App Integration', () => {
         testFn('should create TodoList page and integrate it into the app', async () => {
             console.log('\n=== Full App Integration Test ===\n');
             const startTime = Date.now();
-            
+
             // Step 1: Create the Todo List page
             console.log('[Step 1/4] Creating TodoList page...');
             const step1Start = Date.now();
@@ -259,13 +259,13 @@ export default function Card({ title, children }: CardProps) {
 
             const todoPath = path.join(workspace.path, 'src', 'pages', 'TodoList.tsx');
             const pageExists = await fs.access(todoPath).then(() => true).catch(() => false);
-            
+
             if (!pageExists) {
                 console.log('❌ Step 1 failed: TodoList page not created');
                 console.log('LLM Response:', createPageResult.content);
             }
             expect(pageExists).toBe(true);
-            
+
             if (pageExists) {
                 const content = await fs.readFile(todoPath, 'utf-8');
                 try {
@@ -283,7 +283,7 @@ export default function Card({ title, children }: CardProps) {
                     throw err;
                 }
             }
-            
+
             // Step 2: Add route to App.tsx
             console.log('[Step 2/4] Adding route to App.tsx...');
             const step2Start = Date.now();
@@ -304,7 +304,7 @@ export default function Card({ title, children }: CardProps) {
             const appPath = path.join(workspace.path, 'src', 'App.tsx');
             const appExists = await fs.access(appPath).then(() => true).catch(() => false);
             expect(appExists).toBe(true);
-            
+
             if (appExists) {
                 const appContent = await fs.readFile(appPath, 'utf-8');
                 try {
@@ -318,7 +318,7 @@ export default function Card({ title, children }: CardProps) {
                     throw err;
                 }
             }
-            
+
             // Step 3: Update Index page
             console.log('[Step 3/4] Adding navigation link to Index page...');
             const step3Start = Date.now();
@@ -339,7 +339,7 @@ export default function Card({ title, children }: CardProps) {
             const indexPath = path.join(workspace.path, 'src', 'pages', 'Index.tsx');
             const indexExists = await fs.access(indexPath).then(() => true).catch(() => false);
             expect(indexExists).toBe(true);
-            
+
             if (indexExists) {
                 const indexContent = await fs.readFile(indexPath, 'utf-8');
                 try {
@@ -352,7 +352,7 @@ export default function Card({ title, children }: CardProps) {
                     throw err;
                 }
             }
-            
+
             // Step 4: Build verification
             console.log('[Step 4/4] Verifying build...');
             const step4Start = Date.now();
@@ -368,7 +368,7 @@ export default function Card({ title, children }: CardProps) {
                 const distPath = path.join(workspace.path, 'dist');
                 const distExists = await fs.access(distPath).then(() => true).catch(() => false);
                 expect(distExists).toBe(true);
-                
+
                 if (distExists) {
                     const indexHtmlPath = path.join(distPath, 'index.html');
                     const indexHtmlExists = await fs.access(indexHtmlPath).then(() => true).catch(() => false);
@@ -379,7 +379,7 @@ export default function Card({ title, children }: CardProps) {
                 console.error('\n❌ Build failed:');
                 const stdout = buildError.stdout?.toString();
                 const stderr = buildError.stderr?.toString();
-                
+
                 if (stdout) {
                     console.error('\nSTDOUT:');
                     console.error(stdout);
@@ -391,27 +391,27 @@ export default function Card({ title, children }: CardProps) {
                 if (!stdout && !stderr) {
                     console.error('\nError:', buildError.message);
                 }
-                
+
                 // Also show the generated files for debugging
                 console.error('\n--- Generated TodoList.tsx ---');
                 const todoContent = await fs.readFile(todoPath, 'utf-8');
                 console.error(todoContent);
-                
+
                 console.error('\n--- Modified App.tsx ---');
                 const appContent = await fs.readFile(appPath, 'utf-8');
                 console.error(appContent);
-                
+
                 throw new Error('Vite build failed: Generated code has compilation errors');
             }
-            
+
             const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
             console.log('\n=== Test Complete ===');
             console.log('✓ Full app integration successful');
             console.log(`✓ Production build passes [Total: ${totalTime}s]\n`);
-            
+
         }, 180000);
     });
-    
+
     describe('Component Syntax Validation', () => {
         testFn('should generate syntactically valid TSX', async () => {
             await workspace.execute(
@@ -427,15 +427,15 @@ export default function Card({ title, children }: CardProps) {
 
             const helloPath = path.join(workspace.path, 'src', 'components', 'HelloWorld.tsx');
             const content = await fs.readFile(helloPath, 'utf-8');
-            
+
             expect(content).toMatch(/export/);
             expect(content).toMatch(/function|const.*=.*\(/);
             expect(content).toMatch(/return/);
-            
+
             const openBrackets = (content.match(/{/g) || []).length;
             const closeBrackets = (content.match(/}/g) || []).length;
             expect(openBrackets).toBe(closeBrackets);
-            
+
             const openParens = (content.match(/\(/g) || []).length;
             const closeParens = (content.match(/\)/g) || []).length;
             expect(openParens).toBe(closeParens);
