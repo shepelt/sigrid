@@ -441,4 +441,72 @@ export default function Card({ title, children }: CardProps) {
             expect(openParens).toBe(closeParens);
         }, 60000);
     });
+
+    describe('Conversation Mode', () => {
+        testFn('should maintain context across multiple executions', async () => {
+            console.log('\n=== Conversation Mode Test ===\n');
+
+            // First execution: Declare plan and create only one component
+            console.log('[Step 1/2] Creating Red component and declaring plan...');
+            const result1 = await workspace.execute(
+                'We are going to create three simple components: Red, Green, and Silver. ' +
+                'For now, create only the Red component at src/components/Red.tsx.',
+                {
+                    instructions: [
+                        aiRules,
+                        'Use functional components',
+                        'Each component should just display its color name'
+                    ],
+                    model: 'gpt-4o-mini',
+                    conversation: true
+                }
+            );
+
+            expect(result1.conversationID).toBeDefined();
+            console.log(`✓ Red component created (Conversation ID: ${result1.conversationID})`);
+
+            const redPath = path.join(workspace.path, 'src', 'components', 'Red.tsx');
+            const redExists = await fs.access(redPath).then(() => true).catch(() => false);
+            expect(redExists).toBe(true);
+
+            // Verify Green and Silver don't exist yet
+            const greenPath = path.join(workspace.path, 'src', 'components', 'Green.tsx');
+            const silverPath = path.join(workspace.path, 'src', 'components', 'Silver.tsx');
+            const greenExists = await fs.access(greenPath).then(() => true).catch(() => false);
+            const silverExists = await fs.access(silverPath).then(() => true).catch(() => false);
+            expect(greenExists).toBe(false);
+            expect(silverExists).toBe(false);
+
+            // Second execution: Reference the conversation context
+            console.log('[Step 2/2] Creating remaining components using conversation context...');
+            const result2 = await workspace.execute(
+                'Now create the rest of the components we discussed.',
+                {
+                    instructions: [aiRules],
+                    model: 'gpt-4o-mini',
+                    conversationID: result1.conversationID
+                }
+            );
+
+            console.log('✓ Remaining components created');
+
+            // Verify Green and Silver now exist
+            const greenExistsAfter = await fs.access(greenPath).then(() => true).catch(() => false);
+            const silverExistsAfter = await fs.access(silverPath).then(() => true).catch(() => false);
+
+            if (!greenExistsAfter) {
+                console.log('❌ Green component not created');
+                console.log('LLM Response:', result2.content);
+            }
+            if (!silverExistsAfter) {
+                console.log('❌ Silver component not created');
+                console.log('LLM Response:', result2.content);
+            }
+
+            expect(greenExistsAfter).toBe(true);
+            expect(silverExistsAfter).toBe(true);
+
+            console.log('✓ Conversation context maintained across executions\n');
+        }, 90000);
+    });
 });

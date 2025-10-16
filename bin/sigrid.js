@@ -115,28 +115,32 @@ program
             // Interactive mode
             console.log("Running in interactive mode (type 'exit' or 'quit' to quit)");
             opts.conversation = true;
-            
+            let conversationID = null;
+
             while (true) {
                 const readline = await import("readline");
                 const rl = readline.createInterface({
                     input: process.stdin,
                     output: process.stdout
                 });
-                
+
                 const question = (query) => new Promise((resolve) => rl.question(query, resolve));
                 const userInput = await question(chalk.green("You: "));
-                
+
                 if (userInput.toLowerCase() === "exit" || userInput.toLowerCase() === "quit") {
                     rl.close();
                     break;
                 }
-                
+
                 const res = await execute(userInput, {
                     ...opts,
+                    conversationID,
                     instructions: buildInstructions(opts),
                     progressCallback: createSpinnerCallback()
                 });
-                
+
+                conversationID = res.conversationID;
+
                 console.log(chalk.blue("Sigrid:"), res.content);
                 rl.close();
             }

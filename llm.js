@@ -221,7 +221,7 @@ export async function execute(prompt, opts = {}) {
     
     return {
         content: response.output_text,
-        conversationID: response.conversation
+        conversationID: response.conversation?.id
     };
 }
 
