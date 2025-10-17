@@ -95,7 +95,7 @@ export async function collectFiles(workspaceDir, options = {}) {
                 nodir: true,
                 absolute: false,
                 ignore: ignorePatterns,
-                dot: false // Don't include hidden files by default
+                dot: true // Include dot files so they can be checked against .gitignore
             }, (err, files) => {
                 if (err) reject(err);
                 else resolve(files);

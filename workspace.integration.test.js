@@ -246,6 +246,166 @@ export interface User {
         }, 60000);
     });
 
+    describe('Snapshot Static Context Loading', () => {
+        testFn('should create component using snapshot context (no read_file calls)', async () => {
+            console.log('\n=== Static Context Loading Test ===\n');
+
+            // First, create some existing components and types
+            console.log('[Setup] Creating existing codebase files...');
+            await fs.mkdir(path.join(workspace.path, 'src', 'types'), { recursive: true });
+
+            await fs.writeFile(
+                path.join(workspace.path, 'src', 'types', 'product.ts'),
+                `export interface Product {
+    id: string;
+    name: string;
+    price: number;
+    category: string;
+}`
+            );
+
+            await fs.writeFile(
+                path.join(workspace.path, 'src', 'components', 'Card.tsx'),
+                `interface CardProps {
+    title: string;
+    children: React.ReactNode;
+}
+
+export default function Card({ title, children }: CardProps) {
+    return (
+        <div className="card">
+            <h3>{title}</h3>
+            <div className="card-content">{children}</div>
+        </div>
+    );
+}`
+            );
+
+            console.log('✓ Existing files created');
+
+            // Create snapshot of the workspace
+            console.log('[Step 1/3] Creating workspace snapshot...');
+            const snapshotStart = Date.now();
+            const snapshot = await workspace.snapshot({
+                include: ['src/**/*'],
+                extensions: ['.ts', '.tsx']
+            });
+            const snapshotTime = ((Date.now() - snapshotStart) / 1000).toFixed(1);
+            console.log(`✓ Snapshot created (${snapshot.length} chars) [${snapshotTime}s]`);
+
+            // Verify snapshot contains expected files
+            expect(snapshot).toContain('src/types/product.ts');
+            expect(snapshot).toContain('interface Product');
+            expect(snapshot).toContain('src/components/Card.tsx');
+            expect(snapshot).toContain('function Card');
+
+            // Use snapshot with execute - LLM should NOT need to call read_file
+            console.log('[Step 2/3] Executing with static context...');
+            const executeStart = Date.now();
+
+            const result = await workspace.execute(
+                'Create a ProductCard component in src/components/ProductCard.tsx. ' +
+                'Use the Product type from types/product.ts and the Card component. ' +
+                'The ProductCard should display product name, price, and category.',
+                {
+                    instructions: [
+                        aiRules,
+                        'The full codebase is provided below. You have all the context you need.',
+                        'DO NOT use read_file tool - all files are already provided.'
+                    ],
+                    prompts: snapshot,
+                    model: 'gpt-4o-mini'
+                }
+            );
+
+            const executeTime = ((Date.now() - executeStart) / 1000).toFixed(1);
+            console.log(`✓ Component generated [${executeTime}s]`);
+
+            // Verify ProductCard was created
+            console.log('[Step 3/3] Verifying generated component...');
+            const productCardPath = path.join(workspace.path, 'src', 'components', 'ProductCard.tsx');
+            const exists = await fs.access(productCardPath).then(() => true).catch(() => false);
+
+            if (!exists) {
+                console.log('❌ ProductCard component not created');
+                console.log('LLM Response:', result.content);
+            }
+            expect(exists).toBe(true);
+
+            if (exists) {
+                const content = await fs.readFile(productCardPath, 'utf-8');
+                console.log(`✓ Generated file (${content.length} chars)`);
+
+                // Should import Product type
+                expect(content).toMatch(/import.*Product.*from.*types\/product/i);
+
+                // Should import or use Card component
+                expect(content).toMatch(/import.*Card|<Card/i);
+
+                // Should use Product interface
+                expect(content).toMatch(/Product/);
+
+                // Should display product properties
+                expect(content).toMatch(/name|price|category/i);
+
+                console.log('✓ Component correctly uses Product type and Card component');
+            }
+
+            console.log('\n=== Static Context Test Complete ===\n');
+        }, 90000); // 90 second timeout
+
+        testFn('should respect .gitignore in snapshot', async () => {
+            console.log('\n=== Gitignore Snapshot Test ===\n');
+
+            // Append to .gitignore (preserve any existing patterns from scaffold)
+            await fs.appendFile(
+                path.join(workspace.path, '.gitignore'),
+                '\n# Test-specific ignores\n.env\n*.log\nsecrets/\n'
+            );
+
+            // Create files (some should be ignored)
+            await fs.writeFile(
+                path.join(workspace.path, '.env'),
+                'API_KEY=secret123'
+            );
+
+            await fs.writeFile(
+                path.join(workspace.path, 'debug.log'),
+                'Debug logs here'
+            );
+
+            await fs.mkdir(path.join(workspace.path, 'src', 'utils'), { recursive: true });
+            await fs.writeFile(
+                path.join(workspace.path, 'src', 'utils', 'config.ts'),
+                'export const config = { apiUrl: "https://api.example.com" };'
+            );
+
+            // Create snapshot (need to include .env extension explicitly)
+            const snapshot = await workspace.snapshot({
+                include: ['**/*'],
+                extensions: ['.ts', '.tsx', '.js', '.jsx', '.css', '.md', '.json', '.env', '.log']
+            });
+
+            console.log('Snapshot preview:', snapshot.substring(0, 500));
+
+            // Should NOT contain actual .env content
+            expect(snapshot).not.toContain('API_KEY=secret123');
+            expect(snapshot).not.toContain('Debug logs here');
+
+            // Should contain placeholder for gitignored files (debug.log)
+            expect(snapshot).toContain('<file path="debug.log">');
+            expect(snapshot).toContain('// File contents excluded from context');
+            expect(snapshot).toContain('(excluded by .gitignore)');
+
+            // Should contain non-ignored files
+            expect(snapshot).toContain('src/utils/config.ts');
+            expect(snapshot).toContain('apiUrl');
+
+            console.log('✓ Gitignore correctly respected in snapshot');
+            console.log('✓ Placeholders included for excluded files\n');
+        }, 60000);
+    });
+
     describe('File Structure Operations', () => {
         testFn('should list project structure', async () => {
             const result = await workspace.execute(

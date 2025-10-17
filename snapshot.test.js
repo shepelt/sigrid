@@ -150,6 +150,50 @@ describe('Snapshot Tests', () => {
             // Should include gitignored files
             expect(files.some(f => f.path === 'ignored.txt') || true).toBe(true);
         });
+
+        test('should handle dot files (files starting with .)', async () => {
+            // Create a .env file in workspace root
+            await fs.writeFile(
+                path.join(workspace.path, '.env'),
+                'API_KEY=secret'
+            );
+
+            // Append .env to .gitignore (don't overwrite existing entries)
+            await fs.appendFile(
+                path.join(workspace.path, '.gitignore'),
+                '.env\n'
+            );
+
+            const { files, omitted } = await collectFiles(workspace.path, {
+                include: ['**/*'],
+                extensions: ['.env', '.ts', '.tsx']  // Explicitly include .env extension
+            });
+
+            // .env should be omitted (gitignored), not skipped by glob
+            expect(omitted.some(f => f.path === '.env' && f.reason === 'gitignore')).toBe(true);
+
+            // .env should NOT be in files (it's gitignored)
+            expect(files.some(f => f.path === '.env')).toBe(false);
+        });
+
+        test('should include dot files that are NOT gitignored', async () => {
+            // Create a .custom file
+            await fs.writeFile(
+                path.join(workspace.path, '.custom'),
+                'custom config'
+            );
+
+            const { files } = await collectFiles(workspace.path, {
+                include: ['**/*', '.*'],  // Include dot files in pattern
+                extensions: ['', '.custom'],  // Allow files with .custom or no extension
+                respectGitignore: false  // Disable gitignore for this test
+            });
+
+            // .custom should be collected (not gitignored, is a dot file)
+            const customFile = files.find(f => f.path === '.custom');
+            expect(customFile).toBeDefined();
+            expect(customFile?.content).toBe('custom config');
+        });
     });
 
     describe('formatAsXML', () => {
