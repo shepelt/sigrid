@@ -103,6 +103,7 @@ export function extractText(r) {
  * @param {boolean} opts.conversation - Enable conversation mode
  * @param {string} opts.conversationID - Existing conversation ID
  * @param {boolean} opts.pure - Pure output mode (no explanations)
+ * @param {string} opts.reasoningEffort - Reasoning effort level: "minimal", "low", "medium", "high" (GPT-5 only)
  * @param {Function} opts.progressCallback - Progress callback (action, message)
  * @returns {Promise<{content: string, conversationID: string}>}
  */
@@ -154,13 +155,22 @@ export async function execute(prompt, opts = {}) {
         ? fileTools.filter(tool => tool.name !== 'write_file')
         : fileTools;
     
-    let response = await apiClient.responses.create({
+    const requestParams = {
         model,
         input: messages,
         conversation: opts.conversationID,
         tools: availableTools,
         tool_choice: "auto"
-    });
+    };
+
+    // Add reasoning effort if specified (GPT-5 models only)
+    if (opts.reasoningEffort) {
+        requestParams.reasoning = {
+            effort: opts.reasoningEffort
+        };
+    }
+
+    let response = await apiClient.responses.create(requestParams);
     
     if (opts.progressCallback) {
         opts.progressCallback('succeed', 'Response received');
@@ -206,13 +216,22 @@ export async function execute(prompt, opts = {}) {
             opts.progressCallback('start', 'Processing...');
         }
         
-        response = await apiClient.responses.create({
+        const followupParams = {
             model,
             input: messages,
             conversation: response.conversation,
             tools: availableTools,
             tool_choice: "auto"
-        });
+        };
+
+        // Add reasoning effort if specified
+        if (opts.reasoningEffort) {
+            followupParams.reasoning = {
+                effort: opts.reasoningEffort
+            };
+        }
+
+        response = await apiClient.responses.create(followupParams);
         
         if (opts.progressCallback) {
             opts.progressCallback('succeed', 'Processing complete');
