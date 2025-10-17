@@ -105,6 +105,7 @@ export function extractText(r) {
  * @param {string} opts.conversationID - Existing conversation ID
  * @param {boolean} opts.pure - Pure output mode (no explanations)
  * @param {string} opts.reasoningEffort - Reasoning effort level: "minimal", "low", "medium", "high" (GPT-5 only)
+ * @param {string[]} opts.disableTools - Array of tool names to disable (e.g., ['read_file', 'write_file'])
  * @param {Function} opts.progressCallback - Progress callback (action, message)
  * @returns {Promise<{content: string, conversationID: string}>}
  */
@@ -162,10 +163,15 @@ export async function execute(prompt, opts = {}) {
     // Initial API call
     const model = opts.model || DEFAULT_MODEL;
     
-    // Select tools based on pure mode
-    const availableTools = opts.pure 
+    // Select tools based on pure mode and disabled tools
+    let availableTools = opts.pure
         ? fileTools.filter(tool => tool.name !== 'write_file')
         : fileTools;
+
+    // Filter out disabled tools
+    if (opts.disableTools && Array.isArray(opts.disableTools)) {
+        availableTools = availableTools.filter(tool => !opts.disableTools.includes(tool.name));
+    }
     
     const requestParams = {
         model,

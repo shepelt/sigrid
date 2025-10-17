@@ -113,6 +113,16 @@ export class SigridBuilder {
     }
 
     /**
+     * Disable specific tools
+     * @param {string[]} toolNames - Array of tool names to disable (e.g., ['read_file', 'write_file'])
+     * @returns {SigridBuilder} this for chaining
+     */
+    disableTools(toolNames) {
+        this.options.disableTools = toolNames;
+        return this;
+    }
+
+    /**
      * Execute the prompt with accumulated options
      * @param {string} prompt - User prompt
      * @param {Object} additionalOpts - Additional options to merge

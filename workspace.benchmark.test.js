@@ -24,6 +24,9 @@ describe('Code Generation Benchmark Tests', () => {
     let workspace;
     let aiRules;
     let tarballBuffer;
+    let staticContextPrompt;
+    let hybridContextPrompt;
+    let hybrid2ContextPrompt;
     const scaffoldPath = path.join(__dirname, 'test-fixtures', 'react-scaffold.tar.gz');
 
     beforeAll(async () => {
@@ -34,6 +37,21 @@ describe('Code Generation Benchmark Tests', () => {
             console.log(`Loading scaffold from: ${scaffoldPath}`);
             tarballBuffer = await fs.readFile(scaffoldPath);
             console.log('✓ Scaffold tarball loaded');
+
+            // Load static context prompt
+            const staticPromptPath = path.join(__dirname, 'STATIC_CONTEXT_PROMPT.md');
+            staticContextPrompt = await fs.readFile(staticPromptPath, 'utf-8');
+            console.log('✓ Static context prompt loaded');
+
+            // Load hybrid context prompt
+            const hybridPromptPath = path.join(__dirname, 'HYBRID_CONTEXT_PROMPT.md');
+            hybridContextPrompt = await fs.readFile(hybridPromptPath, 'utf-8');
+            console.log('✓ Hybrid context prompt loaded');
+
+            // Load hybrid2 context prompt
+            const hybrid2PromptPath = path.join(__dirname, 'HYBRID_CONTEXT_PROMPT_2.md');
+            hybrid2ContextPrompt = await fs.readFile(hybrid2PromptPath, 'utf-8');
+            console.log('✓ Hybrid2 context prompt loaded');
         }
     }, 60000); // 60 second timeout for setup
 
@@ -177,5 +195,322 @@ describe('Code Generation Benchmark Tests', () => {
             expect(totalTime).toBeDefined();
 
         }, 120000); // 2 minute timeout
+    });
+
+    describe('Static vs Dynamic Context Loading Benchmark', () => {
+        testFn('should measure static context loading (snapshot)', async () => {
+            console.log('\n=== Static Context Loading Benchmark ===\n');
+
+            // Step 1: Create snapshot of existing scaffold
+            console.log('[Step 1/2] Creating workspace snapshot...');
+            const snapshotStart = Date.now();
+            const snapshot = await workspace.snapshot({
+                include: ['src/**/*'],
+                extensions: ['.ts', '.tsx', '.css']
+            });
+            const snapshotTime = ((Date.now() - snapshotStart) / 1000).toFixed(1);
+            console.log(`✓ Snapshot created (${snapshot.length} chars) [${snapshotTime}s]`);
+
+            // Step 2: Execute with static context
+            console.log('[Step 2/2] Executing with static context...');
+            const executeStart = Date.now();
+
+            const result = await workspace.execute(
+                'Build a simple todo app with add, complete, and delete functionality',
+                {
+                    instructions: [
+                        aiRules,
+                        staticContextPrompt  // Add instructions for XML output
+                    ],
+                    prompts: [
+                        'Here is the full codebase for context:',
+                        snapshot
+                    ],
+                    model: 'gpt-5-mini',
+                    conversation: true,
+                    disableTools: ['read_file', 'write_file']  // Disable read/write to force XML output
+                }
+            );
+
+            const executeTime = ((Date.now() - executeStart) / 1000).toFixed(1);
+            const totalTime = ((Date.now() - snapshotStart) / 1000).toFixed(1);
+
+            console.log('\n📊 Benchmark Results (Static Loading):');
+            console.log(`   Snapshot creation: ${snapshotTime}s`);
+            console.log(`   Execution time: ${executeTime}s`);
+            console.log(`   Total time: ${totalTime}s`);
+            console.log(`   Snapshot size: ${snapshot.length} chars`);
+
+            // Parse XML output and write files
+            console.log('\n[Parsing XML output and writing files...]');
+            const fileRegex = /<file path="([^"]+)">\s*([\s\S]*?)\s*<\/file>/g;
+            let match;
+            let filesWritten = 0;
+
+            while ((match = fileRegex.exec(result.content)) !== null) {
+                const [_, filePath, content] = match;
+                const fullPath = path.join(workspace.path, filePath);
+
+                // Create directory if needed
+                await fs.mkdir(path.dirname(fullPath), { recursive: true });
+
+                // Write file
+                await fs.writeFile(fullPath, content.trim());
+                filesWritten++;
+                console.log(`   ✓ Wrote: ${filePath} (${content.length} chars)`);
+            }
+
+            console.log(`\n   Total files written: ${filesWritten}`);
+
+            // Verify todo app was created
+            const srcDir = path.join(workspace.path, 'src');
+            const allFiles = await fs.readdir(srcDir, { recursive: true });
+            const todoFiles = allFiles.filter(f =>
+                f.toLowerCase().includes('todo') &&
+                (f.endsWith('.tsx') || f.endsWith('.ts'))
+            );
+
+            // Also check if Index.tsx was modified to include todo functionality
+            const indexPath = path.join(workspace.path, 'src', 'pages', 'Index.tsx');
+            const indexContent = await fs.readFile(indexPath, 'utf-8');
+            const indexHasTodo = indexContent.toLowerCase().includes('todo');
+
+            if (todoFiles.length > 0) {
+                console.log(`\n   Found todo-related files: ${todoFiles.join(', ')}`);
+                const firstTodoFile = path.join(srcDir, todoFiles[0]);
+                const content = await fs.readFile(firstTodoFile, 'utf-8');
+                console.log(`   Generated file: ${content.length} chars`);
+                console.log('   ✓ Todo component created');
+            } else if (indexHasTodo) {
+                console.log('\n   Todo app added to Index.tsx');
+                console.log(`   Modified Index.tsx: ${indexContent.length} chars`);
+                console.log('   ✓ Todo app integrated into Index page');
+            } else {
+                console.log('\n   ⚠️  No todo functionality found');
+                console.log('   LLM Response:', result.content.substring(0, 500));
+            }
+
+            console.log('\n=== Static Context Benchmark Complete ===\n');
+
+            expect(filesWritten).toBeGreaterThan(0);
+            expect(todoFiles.length > 0 || indexHasTodo).toBe(true);
+            expect(result).toBeDefined();
+        }, 90000); // 90 second timeout
+
+        testFn('should measure dynamic context loading (read_file)', async () => {
+            console.log('\n=== Dynamic Context Loading Benchmark ===\n');
+
+            // Execute with dynamic context (LLM will call read_file)
+            console.log('[Step 1/1] Executing with dynamic context (LLM will use read_file)...');
+            const executeStart = Date.now();
+
+            const result = await workspace.execute(
+                'Build a simple todo app with add, complete, and delete functionality',
+                {
+                    instructions: [aiRules],
+                    model: 'gpt-5-mini',
+                    conversation: true
+                }
+            );
+
+            const executeTime = ((Date.now() - executeStart) / 1000).toFixed(1);
+
+            console.log('\n📊 Benchmark Results (Dynamic Loading):');
+            console.log(`   Execution time: ${executeTime}s`);
+            console.log(`   (includes read_file tool calls)`);
+
+            // Verify todo app was created (check components or pages)
+            const srcDir = path.join(workspace.path, 'src');
+            const allFiles = await fs.readdir(srcDir, { recursive: true });
+            const todoFiles = allFiles.filter(f =>
+                f.toLowerCase().includes('todo') &&
+                (f.endsWith('.tsx') || f.endsWith('.ts'))
+            );
+
+            // Also check if Index.tsx was modified to include todo functionality
+            const indexPath = path.join(workspace.path, 'src', 'pages', 'Index.tsx');
+            const indexContent = await fs.readFile(indexPath, 'utf-8');
+            const indexHasTodo = indexContent.toLowerCase().includes('todo');
+
+            if (todoFiles.length > 0) {
+                console.log(`   Found todo-related files: ${todoFiles.join(', ')}`);
+                const firstTodoFile = path.join(srcDir, todoFiles[0]);
+                const content = await fs.readFile(firstTodoFile, 'utf-8');
+                console.log(`   Generated file: ${content.length} chars`);
+                console.log('✓ Todo component created');
+            } else if (indexHasTodo) {
+                console.log('   Todo app added to Index.tsx');
+                console.log(`   Modified Index.tsx: ${indexContent.length} chars`);
+                console.log('✓ Todo app integrated into Index page');
+            } else {
+                console.log('⚠️  No todo functionality found');
+                console.log('LLM Response:', result.content.substring(0, 500));
+            }
+
+            console.log('\n=== Dynamic Context Benchmark Complete ===\n');
+
+            expect(todoFiles.length > 0 || indexHasTodo).toBe(true);
+            expect(result).toBeDefined();
+        }, 180000); // 3 minute timeout
+
+        testFn('should measure hybrid context loading (static read, dynamic write)', async () => {
+            console.log('\n=== Hybrid Context Loading Benchmark ===\n');
+
+            // Step 1: Create snapshot
+            console.log('[Step 1/2] Creating workspace snapshot...');
+            const snapshotStart = Date.now();
+            const snapshot = await workspace.snapshot({
+                include: ['src/**/*'],
+                extensions: ['.ts', '.tsx', '.css']
+            });
+            const snapshotTime = ((Date.now() - snapshotStart) / 1000).toFixed(1);
+            console.log(`✓ Snapshot created (${snapshot.length} chars) [${snapshotTime}s]`);
+
+            // Step 2: Execute with hybrid context (snapshot + write_file)
+            console.log('[Step 2/2] Executing with hybrid context...');
+            const executeStart = Date.now();
+
+            const result = await workspace.execute(
+                'Build a simple todo app with add, complete, and delete functionality',
+                {
+                    instructions: [
+                        aiRules,
+                        hybridContextPrompt  // Add instructions for hybrid approach
+                    ],
+                    prompts: [
+                        'Here is the full codebase for context:',
+                        snapshot
+                    ],
+                    model: 'gpt-5-mini',
+                    conversation: true,
+                    disableTools: ['read_file']  // Disable only read_file, allow write_file
+                }
+            );
+
+            const executeTime = ((Date.now() - executeStart) / 1000).toFixed(1);
+            const totalTime = ((Date.now() - snapshotStart) / 1000).toFixed(1);
+
+            console.log('\n📊 Benchmark Results (Hybrid Loading):');
+            console.log(`   Snapshot creation: ${snapshotTime}s`);
+            console.log(`   Execution time: ${executeTime}s`);
+            console.log(`   Total time: ${totalTime}s`);
+            console.log(`   Snapshot size: ${snapshot.length} chars`);
+            console.log(`   (Static context for reading, write_file tool for output)`);
+
+            // Verify todo app was created
+            const srcDir = path.join(workspace.path, 'src');
+            const allFiles = await fs.readdir(srcDir, { recursive: true });
+            const todoFiles = allFiles.filter(f =>
+                f.toLowerCase().includes('todo') &&
+                (f.endsWith('.tsx') || f.endsWith('.ts'))
+            );
+
+            // Also check if Index.tsx was modified to include todo functionality
+            const indexPath = path.join(workspace.path, 'src', 'pages', 'Index.tsx');
+            const indexContent = await fs.readFile(indexPath, 'utf-8');
+            const indexHasTodo = indexContent.toLowerCase().includes('todo');
+
+            if (todoFiles.length > 0) {
+                console.log(`\n   Found todo-related files: ${todoFiles.join(', ')}`);
+                const firstTodoFile = path.join(srcDir, todoFiles[0]);
+                const content = await fs.readFile(firstTodoFile, 'utf-8');
+                console.log(`   Generated file: ${content.length} chars`);
+                console.log('   ✓ Todo component created');
+            } else if (indexHasTodo) {
+                console.log('\n   Todo app added to Index.tsx');
+                console.log(`   Modified Index.tsx: ${indexContent.length} chars`);
+                console.log('   ✓ Todo app integrated into Index page');
+            } else {
+                console.log('\n   ⚠️  No todo functionality found');
+                console.log('   LLM Response:', result.content.substring(0, 500));
+            }
+
+            console.log('\n=== Hybrid Context Benchmark Complete ===\n');
+
+            expect(todoFiles.length > 0 || indexHasTodo).toBe(true);
+            expect(result).toBeDefined();
+        }, 180000); // 3 minute timeout
+
+        testFn('should measure hybrid context 2 loading (dynamic read, static write)', async () => {
+            console.log('\n=== Hybrid Context 2 Loading Benchmark ===\n');
+
+            // Execute with hybrid2 context (read_file allowed, XML output required)
+            console.log('[Step 1/1] Executing with hybrid context 2 (read_file allowed, XML output)...');
+            const executeStart = Date.now();
+
+            const result = await workspace.execute(
+                'Build a simple todo app with add, complete, and delete functionality',
+                {
+                    instructions: [
+                        aiRules,
+                        hybrid2ContextPrompt  // Add instructions for hybrid2 approach
+                    ],
+                    model: 'gpt-5-mini',
+                    conversation: true,
+                    disableTools: ['write_file']  // Disable only write_file, allow read_file
+                }
+            );
+
+            const executeTime = ((Date.now() - executeStart) / 1000).toFixed(1);
+
+            console.log('\n📊 Benchmark Results (Hybrid2 Loading):');
+            console.log(`   Execution time: ${executeTime}s`);
+            console.log(`   (Dynamic read_file calls, XML output)`);
+
+            // Parse XML output and write files
+            console.log('\n[Parsing XML output and writing files...]');
+            const fileRegex = /<file path="([^"]+)">\s*([\s\S]*?)\s*<\/file>/g;
+            let match;
+            let filesWritten = 0;
+
+            while ((match = fileRegex.exec(result.content)) !== null) {
+                const [_, filePath, content] = match;
+                const fullPath = path.join(workspace.path, filePath);
+
+                // Create directory if needed
+                await fs.mkdir(path.dirname(fullPath), { recursive: true });
+
+                // Write file
+                await fs.writeFile(fullPath, content.trim());
+                filesWritten++;
+                console.log(`   ✓ Wrote: ${filePath} (${content.length} chars)`);
+            }
+
+            console.log(`\n   Total files written: ${filesWritten}`);
+
+            // Verify todo app was created
+            const srcDir = path.join(workspace.path, 'src');
+            const allFiles = await fs.readdir(srcDir, { recursive: true });
+            const todoFiles = allFiles.filter(f =>
+                f.toLowerCase().includes('todo') &&
+                (f.endsWith('.tsx') || f.endsWith('.ts'))
+            );
+
+            // Also check if Index.tsx was modified to include todo functionality
+            const indexPath = path.join(workspace.path, 'src', 'pages', 'Index.tsx');
+            const indexContent = await fs.readFile(indexPath, 'utf-8');
+            const indexHasTodo = indexContent.toLowerCase().includes('todo');
+
+            if (todoFiles.length > 0) {
+                console.log(`\n   Found todo-related files: ${todoFiles.join(', ')}`);
+                const firstTodoFile = path.join(srcDir, todoFiles[0]);
+                const content = await fs.readFile(firstTodoFile, 'utf-8');
+                console.log(`   Generated file: ${content.length} chars`);
+                console.log('   ✓ Todo component created');
+            } else if (indexHasTodo) {
+                console.log('\n   Todo app added to Index.tsx');
+                console.log(`   Modified Index.tsx: ${indexContent.length} chars`);
+                console.log('   ✓ Todo app integrated into Index page');
+            } else {
+                console.log('\n   ⚠️  No todo functionality found');
+                console.log('   LLM Response:', result.content.substring(0, 500));
+            }
+
+            console.log('\n=== Hybrid Context 2 Benchmark Complete ===\n');
+
+            expect(filesWritten).toBeGreaterThan(0);
+            expect(todoFiles.length > 0 || indexHasTodo).toBe(true);
+            expect(result).toBeDefined();
+        }, 180000); // 3 minute timeout
     });
 });
