@@ -69,6 +69,28 @@ describe('LLM Integration Tests', () => {
             const wordCount = result.content.trim().split(/\s+/).length;
             expect(wordCount).toBeLessThanOrEqual(3); // Allow some flexibility
         }, 30000);
+
+        testFn('should handle prompts parameter (single string)', async () => {
+            const result = await execute('What fruit did I mention?', {
+                prompts: 'My favorite fruit is apple',
+                model: 'gpt-4o-mini'
+            });
+
+            expect(result.content.toLowerCase()).toContain('apple');
+        }, 30000);
+
+        testFn('should handle prompts parameter (array)', async () => {
+            const result = await execute('What are my favorite things?', {
+                prompts: [
+                    'My favorite color is blue',
+                    'My favorite fruit is apple'
+                ],
+                model: 'gpt-4o-mini'
+            });
+
+            expect(result.content.toLowerCase()).toContain('blue');
+            expect(result.content.toLowerCase()).toContain('apple');
+        }, 30000);
     });
 
     describe('Tool Calling', () => {

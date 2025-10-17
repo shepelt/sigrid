@@ -206,6 +206,46 @@ export default function Card({ title, children }: CardProps) {
         }, 60000);
     });
 
+    describe('Prompts Parameter', () => {
+        testFn('should handle prompts parameter for context loading', async () => {
+            const codebaseContext = `
+File: src/types/user.ts
+export interface User {
+    id: string;
+    name: string;
+    email: string;
+}
+            `.trim();
+
+            const result = await workspace.execute(
+                'Create a UserCard component in src/components/UserCard.tsx that displays a user\'s information. Use the User type.',
+                {
+                    instructions: [aiRules],
+                    prompts: [
+                        'Here is the codebase context:',
+                        codebaseContext
+                    ],
+                    model: 'gpt-4o-mini'
+                }
+            );
+
+            const userCardPath = path.join(workspace.path, 'src', 'components', 'UserCard.tsx');
+            const exists = await fs.access(userCardPath).then(() => true).catch(() => false);
+
+            if (!exists) {
+                console.log('❌ UserCard component not created');
+                console.log('LLM Response:', result.content);
+            }
+            expect(exists).toBe(true);
+
+            if (exists) {
+                const content = await fs.readFile(userCardPath, 'utf-8');
+                expect(content).toMatch(/User/);
+                expect(content).toMatch(/id|name|email/);
+            }
+        }, 60000);
+    });
+
     describe('File Structure Operations', () => {
         testFn('should list project structure', async () => {
             const result = await workspace.execute(

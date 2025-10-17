@@ -50,6 +50,31 @@ export class SigridBuilder {
     }
 
     /**
+     * Add a single prompt (user message before main prompt)
+     * @param {string} text - Prompt text
+     * @returns {SigridBuilder} this for chaining
+     */
+    prompt(text) {
+        if (!this.options.prompts) {
+            this.options.prompts = [];
+        } else if (!Array.isArray(this.options.prompts)) {
+            this.options.prompts = [this.options.prompts];
+        }
+        this.options.prompts.push(text);
+        return this;
+    }
+
+    /**
+     * Set prompts (replaces existing)
+     * @param {string|string[]} promptsInput - Single prompt or array
+     * @returns {SigridBuilder} this for chaining
+     */
+    prompts(promptsInput) {
+        this.options.prompts = promptsInput;
+        return this;
+    }
+
+    /**
      * Enable conversation mode
      * @returns {SigridBuilder} this for chaining
      */

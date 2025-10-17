@@ -100,6 +100,7 @@ export function extractText(r) {
  * @param {OpenAI} opts.client - Custom OpenAI client (optional, uses initialized client by default)
  * @param {string} opts.model - Model name (default: "gpt-5-mini")
  * @param {string|string[]} opts.instructions - System instruction(s)
+ * @param {string|string[]} opts.prompts - Additional user prompts inserted before main prompt
  * @param {boolean} opts.conversation - Enable conversation mode
  * @param {string} opts.conversationID - Existing conversation ID
  * @param {boolean} opts.pure - Pure output mode (no explanations)
@@ -139,7 +140,18 @@ export async function execute(prompt, opts = {}) {
     // Add tooling instruction
     const toolingInstruction = opts.pure ? PURE_MODE_TOOLING_INSTRUCTION : TOOLING_INSTRUCTION;
     messages.push({ role: "system", content: toolingInstruction });
-    
+
+    // Add additional user prompts before main prompt
+    if (opts.prompts) {
+        const prompts = Array.isArray(opts.prompts)
+            ? opts.prompts
+            : [opts.prompts];
+
+        for (const p of prompts) {
+            messages.push({ role: "user", content: p });
+        }
+    }
+
     messages.push({ role: "user", content: prompt });
     
     // Progress callback

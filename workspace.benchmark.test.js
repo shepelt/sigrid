@@ -23,7 +23,6 @@ describe('Code Generation Benchmark Tests', () => {
 
     let workspace;
     let aiRules;
-    let codegenPrompts;
     let tarballBuffer;
     const scaffoldPath = path.join(__dirname, 'test-fixtures', 'react-scaffold.tar.gz');
 
@@ -35,11 +34,6 @@ describe('Code Generation Benchmark Tests', () => {
             console.log(`Loading scaffold from: ${scaffoldPath}`);
             tarballBuffer = await fs.readFile(scaffoldPath);
             console.log('✓ Scaffold tarball loaded');
-
-            // Read CODEGEN_PROMPTS.md from project root
-            const codegenPromptsPath = path.join(__dirname, 'CODEGEN_PROMPTS.md');
-            codegenPrompts = await fs.readFile(codegenPromptsPath, 'utf-8');
-            console.log('✓ CODEGEN_PROMPTS.md loaded');
         }
     }, 60000); // 60 second timeout for setup
 
@@ -155,97 +149,6 @@ describe('Code Generation Benchmark Tests', () => {
 
             console.log(`\n📊 Benchmark Results:`);
             console.log(`   Model: gpt-5-mini (minimal reasoning)`);
-            console.log(`   Total time: ${totalTime}s`);
-            console.log(`   Prompt: "${prompt}"`);
-
-            // Verify the todo app was created
-            const srcComponents = path.join(workspace.path, 'src', 'components');
-            let foundFiles = [];
-            try {
-                const files = await fs.readdir(srcComponents, { recursive: true });
-                foundFiles = files.filter(f => f.toLowerCase().includes('todo'));
-                console.log(`   Found files: ${foundFiles.join(', ') || 'none'}`);
-
-                if (foundFiles.length > 0) {
-                    const firstTodoFile = path.join(srcComponents, foundFiles[0]);
-                    const content = await fs.readFile(firstTodoFile, 'utf-8');
-                    console.log(`   Generated file size: ${content.length} chars`);
-                    console.log(`✓ Todo app component created`);
-                }
-            } catch (err) {
-                console.log('⚠️  Could not read components directory');
-            }
-
-            console.log(`\n=== Benchmark Complete ===\n`);
-
-            // Basic assertion - just make sure it completed
-            expect(result).toBeDefined();
-            expect(totalTime).toBeDefined();
-
-        }, 120000); // 2 minute timeout
-
-        testFn('should measure time with AI_RULES + CODEGEN_PROMPTS (default reasoning)', async () => {
-            console.log('\n=== Todo App Benchmark (AI_RULES + CODEGEN_PROMPTS, Default Reasoning) ===\n');
-            const startTime = Date.now();
-
-            const prompt = 'Build a simple todo app with add, complete, and delete functionality';
-
-            const result = await workspace.execute(prompt, {
-                instructions: [aiRules, codegenPrompts],
-                model: 'gpt-5-mini',
-                conversation: true
-            });
-
-            const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-
-            console.log(`\n📊 Benchmark Results:`);
-            console.log(`   Model: gpt-5-mini (default reasoning + codegen prompts)`);
-            console.log(`   Total time: ${totalTime}s`);
-            console.log(`   Prompt: "${prompt}"`);
-
-            // Verify the todo app was created
-            const srcComponents = path.join(workspace.path, 'src', 'components');
-            let foundFiles = [];
-            try {
-                const files = await fs.readdir(srcComponents, { recursive: true });
-                foundFiles = files.filter(f => f.toLowerCase().includes('todo'));
-                console.log(`   Found files: ${foundFiles.join(', ') || 'none'}`);
-
-                if (foundFiles.length > 0) {
-                    const firstTodoFile = path.join(srcComponents, foundFiles[0]);
-                    const content = await fs.readFile(firstTodoFile, 'utf-8');
-                    console.log(`   Generated file size: ${content.length} chars`);
-                    console.log(`✓ Todo app component created`);
-                }
-            } catch (err) {
-                console.log('⚠️  Could not read components directory');
-            }
-
-            console.log(`\n=== Benchmark Complete ===\n`);
-
-            // Basic assertion - just make sure it completed
-            expect(result).toBeDefined();
-            expect(totalTime).toBeDefined();
-
-        }, 180000); // 3 minute timeout
-
-        testFn('should measure time with AI_RULES + CODEGEN_PROMPTS (minimal reasoning)', async () => {
-            console.log('\n=== Todo App Benchmark (AI_RULES + CODEGEN_PROMPTS, Minimal Reasoning) ===\n');
-            const startTime = Date.now();
-
-            const prompt = 'Build a simple todo app with add, complete, and delete functionality';
-
-            const result = await workspace.execute(prompt, {
-                instructions: [aiRules, codegenPrompts],
-                model: 'gpt-5-mini',
-                reasoningEffort: 'minimal',
-                conversation: true
-            });
-
-            const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-
-            console.log(`\n📊 Benchmark Results:`);
-            console.log(`   Model: gpt-5-mini (minimal reasoning + codegen prompts)`);
             console.log(`   Total time: ${totalTime}s`);
             console.log(`   Prompt: "${prompt}"`);
 
