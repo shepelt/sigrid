@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
+import { createSnapshot } from './snapshot.js';
 
 /**
  * Workspace represents an isolated working directory for Sigrid
@@ -128,6 +129,33 @@ export class Workspace {
         } catch (error) {
             throw new Error(`Failed to populate workspace: ${error.message}`);
         }
+    }
+
+    /**
+     * Create a snapshot of the workspace for static context loading
+     * @param {Object} options - Snapshot options
+     * @param {string[]} options.extensions - File extensions to include
+     * @param {number} options.maxFileSize - Max file size in bytes (default: 1MB)
+     * @param {string[]} options.exclude - Patterns to exclude
+     * @param {string[]} options.include - Patterns to include
+     * @param {boolean} options.respectGitignore - Respect .gitignore patterns (default: true)
+     * @param {boolean} options.includePlaceholders - Include placeholders for omitted files (default: true)
+     * @returns {Promise<string>} XML formatted snapshot string
+     *
+     * @example
+     * // Get snapshot of src directory
+     * const snapshot = await workspace.snapshot({
+     *   include: ['src/**\/*'],
+     *   extensions: ['.ts', '.tsx']
+     * });
+     *
+     * // Use with execute
+     * await workspace.execute('Create component', {
+     *   prompts: snapshot
+     * });
+     */
+    async snapshot(options = {}) {
+        return createSnapshot(this.path, options);
     }
 
     /**
