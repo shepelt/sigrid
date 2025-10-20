@@ -783,6 +783,9 @@ OPENAI_API_KEY=xxx npm test -- workspace.static.stress.test.js
 # Run conversation stress tests (requires OPENAI_API_KEY)
 OPENAI_API_KEY=xxx npm test -- workspace.static.conversation.stress.test.js
 
+# Run LLM rate limit stress tests (requires OPENAI_API_KEY, will trigger 429 errors)
+OPENAI_API_KEY=xxx npm test -- llm.stress.test.js
+
 # Run all static mode tests (integration + stress)
 OPENAI_API_KEY=xxx npm run test:static
 
@@ -815,6 +818,11 @@ npm run test:coverage
   - Large conversation history with recall (10+ turns)
   - Concurrent conversations with different persistence providers
   - InMemoryPersistence and FileSystemPersistence providers
+- **LLM Rate Limit Stress Tests**: Intentionally trigger OpenAI API rate limits
+  - Rapid sequential API calls to exceed 500k tokens-per-minute limit
+  - Validates 429 error handling and error message details
+  - Useful for testing rate limit detection and recovery mechanisms
+  - ⚠️ Warning: Will consume API quota and trigger rate limit errors
 
 ## License
 
