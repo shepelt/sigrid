@@ -16,10 +16,13 @@
   },
   "scripts": {
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
-    "test:unit": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathIgnorePatterns=integration",
+    "test:unit": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathIgnorePatterns=integration --testPathIgnorePatterns=stress",
     "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=integration",
     "test:integration:keep": "KEEP_TEST_DIR=1 node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=integration",
     "test:integration:verbose": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=integration --verbose --detectOpenHandles",
+    "test:stress": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=stress",
+    "test:stress:keep": "KEEP_TEST_DIR=1 node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=stress",
+    "test:static": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='(integration|stress)'",
     "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch",
     "test:coverage": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --coverage"
   },

@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
 import { createSnapshot } from './snapshot.js';
+import { getStaticContextPrompt } from './prompts.js';
 
 /**
  * Workspace represents an isolated working directory for Sigrid
@@ -25,10 +26,24 @@ export class Workspace {
     /**
      * Execute a prompt on this workspace
      * @param {string} prompt - User prompt
-     * @param {Object} options - Additional options (model, instructions, etc.)
-     * @returns {Promise<{content: string, conversationID: string}>}
+     * @param {Object} options - Additional options
+     * @param {string} options.model - Model to use
+     * @param {string[]} options.instructions - System instructions
+     * @param {string} options.instruction - Single instruction
+     * @param {boolean} options.pure - Pure mode (read-only)
+     * @param {boolean} options.conversation - Conversation mode
+     * @param {Function} options.progressCallback - Progress callback
+     * @param {string} options.mode - Execution mode ('static' for static context loading)
+     * @param {Object|string} options.snapshot - Snapshot config or pre-computed snapshot string
+     * @returns {Promise<{content: string, conversationID: string, filesWritten?: Array}>}
      */
     async execute(prompt, options = {}) {
+        // Handle static mode
+        if (options.mode === 'static') {
+            return await this._executeStatic(prompt, options);
+        }
+
+        // Standard execution
         const builder = new SigridBuilder();
         builder.workspace(this.path);
 
@@ -41,6 +56,43 @@ export class Workspace {
         if (options.progressCallback) builder.progress(options.progressCallback);
 
         return await builder.execute(prompt, options);
+    }
+
+    /**
+     * Execute in static mode with automatic snapshot and XML deserialization
+     * @param {string} prompt - User prompt
+     * @param {Object} options - Options
+     * @returns {Promise<{content: string, conversationID: string, filesWritten: Array}>}
+     * @private
+     */
+    async _executeStatic(prompt, options) {
+        // Generate or use provided snapshot
+        let snapshot;
+        if (typeof options.snapshot === 'string') {
+            // Pre-computed snapshot provided
+            snapshot = options.snapshot;
+        } else {
+            // Auto-generate snapshot
+            snapshot = await this.snapshot(options.snapshot || {});
+        }
+
+        // Construct final options (merge user options with static mode requirements)
+        const finalOptions = {
+            ...options,  // Keep all user options (temperature, reasoningEffort, etc.)
+            workspace: this.path,
+            instructions: [...(options.instructions || []), getStaticContextPrompt()],
+            prompts: ['Here is the full codebase for context:', snapshot],
+            disableTools: ['read_file', 'write_file']
+        };
+
+        // Use builder as thin wrapper for execute()
+        const builder = new SigridBuilder();
+        const result = await builder.execute(prompt, finalOptions);
+
+        // Deserialize XML output to filesystem
+        result.filesWritten = await this.deserializeXmlOutput(result.content);
+
+        return result;
     }
 
     /**
@@ -156,6 +208,40 @@ export class Workspace {
      */
     async snapshot(options = {}) {
         return createSnapshot(this.path, options);
+    }
+
+    /**
+     * Deserialize XML file output and write to workspace filesystem
+     * @param {string} content - LLM response content containing XML <file> tags
+     * @returns {Promise<Array<{path: string, size: number}>>} Array of written files
+     *
+     * @example
+     * const filesWritten = await workspace.deserializeXmlOutput(result.content);
+     * console.log(`Wrote ${filesWritten.length} files`);
+     */
+    async deserializeXmlOutput(content) {
+        const fileRegex = /<sg-file path="([^"]+)">\s*([\s\S]*?)\s*<\/sg-file>/g;
+        const filesWritten = [];
+        let match;
+
+        while ((match = fileRegex.exec(content)) !== null) {
+            const [_, filePath, fileContent] = match;
+            const fullPath = path.join(this.path, filePath);
+
+            // Create directory if needed
+            await fs.mkdir(path.dirname(fullPath), { recursive: true });
+
+            // Write file
+            const trimmedContent = fileContent.trim();
+            await fs.writeFile(fullPath, trimmedContent);
+
+            filesWritten.push({
+                path: filePath,
+                size: trimmedContent.length
+            });
+        }
+
+        return filesWritten;
     }
 
     /**
