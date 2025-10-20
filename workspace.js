@@ -107,6 +107,9 @@ export class Workspace {
         const decodeEntities = options.decodeHtmlEntities === true;
         result.filesWritten = await this.deserializeXmlOutput(result.content, decodeEntities);
 
+        // Filter out <sg-file> tags from result.content for static mode
+        result.content = result.content.replace(/<sg-file[^>]*>[\s\S]*?<\/sg-file>/g, '').trim();
+
         return result;
     }
 
