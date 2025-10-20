@@ -35,6 +35,7 @@ export class Workspace {
      * @param {Function} options.progressCallback - Progress callback
      * @param {string} options.mode - Execution mode ('static' for static context loading)
      * @param {Object|string} options.snapshot - Snapshot config or pre-computed snapshot string
+     * @param {boolean} options.decodeHtmlEntities - Decode HTML entities in static mode output (default: false)
      * @returns {Promise<{content: string, conversationID: string, filesWritten?: Array}>}
      */
     async execute(prompt, options = {}) {
@@ -102,7 +103,9 @@ export class Workspace {
         const result = await builder.execute(prompt, finalOptions);
 
         // Deserialize XML output to filesystem
-        result.filesWritten = await this.deserializeXmlOutput(result.content);
+        // decodeHtmlEntities defaults to false (following DYAD's proven approach)
+        const decodeEntities = options.decodeHtmlEntities === true;
+        result.filesWritten = await this.deserializeXmlOutput(result.content, decodeEntities);
 
         return result;
     }
@@ -225,13 +228,18 @@ export class Workspace {
     /**
      * Deserialize XML file output and write to workspace filesystem
      * @param {string} content - LLM response content containing XML <file> tags
+     * @param {boolean} decodeHtmlEntities - Whether to decode HTML entities (default: false)
      * @returns {Promise<Array<{path: string, size: number}>>} Array of written files
      *
      * @example
+     * // Without decoding (default, follows DYAD's approach)
      * const filesWritten = await workspace.deserializeXmlOutput(result.content);
+     *
+     * // With decoding (defensive, for LLMs that encode entities)
+     * const filesWritten = await workspace.deserializeXmlOutput(result.content, true);
      * console.log(`Wrote ${filesWritten.length} files`);
      */
-    async deserializeXmlOutput(content) {
+    async deserializeXmlOutput(content, decodeHtmlEntities = false) {
         const fileRegex = /<sg-file path="([^"]+)">\s*([\s\S]*?)\s*<\/sg-file>/g;
         const filesWritten = [];
         let match;
@@ -243,17 +251,45 @@ export class Workspace {
             // Create directory if needed
             await fs.mkdir(path.dirname(fullPath), { recursive: true });
 
-            // Write file
+            // Optionally decode HTML entities before writing
             const trimmedContent = fileContent.trim();
-            await fs.writeFile(fullPath, trimmedContent);
+            const finalContent = decodeHtmlEntities
+                ? this._decodeHtmlEntities(trimmedContent)
+                : trimmedContent;
+            await fs.writeFile(fullPath, finalContent);
 
             filesWritten.push({
                 path: filePath,
-                size: trimmedContent.length
+                size: finalContent.length
             });
         }
 
         return filesWritten;
+    }
+
+    /**
+     * Decode HTML entities in a string
+     * @param {string} text - Text with HTML entities
+     * @returns {string} Decoded text
+     * @private
+     */
+    _decodeHtmlEntities(text) {
+        const entities = {
+            '&lt;': '<',
+            '&gt;': '>',
+            '&amp;': '&',
+            '&quot;': '"',
+            '&apos;': "'"
+        };
+
+        // Replace entities in order, handling &amp; last to avoid double-decoding
+        // e.g., "&amp;lt;" should become "&lt;" not "<"
+        return text
+            .replace(/&lt;/g, entities['&lt;'])
+            .replace(/&gt;/g, entities['&gt;'])
+            .replace(/&quot;/g, entities['&quot;'])
+            .replace(/&apos;/g, entities['&apos;'])
+            .replace(/&amp;/g, entities['&amp;']);
     }
 
     /**

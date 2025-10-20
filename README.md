@@ -535,6 +535,38 @@ const result = await workspace.execute(
 );
 ```
 
+#### HTML Entity Decoding (Optional)
+
+By default, Sigrid follows DYAD's proven few-shot prompting approach and writes LLM output as-is without decoding HTML entities. However, if your LLM encodes special characters (like `=>` becoming `=&gt;`), you can enable defensive HTML entity decoding:
+
+```javascript
+const result = await workspace.execute(
+  'Add a React component',
+  {
+    mode: 'static',
+    model: 'gpt-5',
+    decodeHtmlEntities: true  // Enable HTML entity decoding
+  }
+);
+```
+
+**When to enable:**
+- Your LLM encodes `<`, `>`, `&`, `"`, or `'` as HTML entities
+- Build failures with syntax errors like `Expected "=>" but found "="`
+- Code contains literal `&lt;`, `&gt;`, `&amp;`, etc. instead of actual characters
+
+**Default behavior (recommended):**
+- `decodeHtmlEntities: false` - Follows DYAD's approach with few-shot prompting
+- Proven to work reliably across ChatGPT, Claude, and other LLMs
+- Avoids complexity of double-encoding for literal HTML entity strings
+
+**Decoded entities (when enabled):**
+- `&lt;` → `<`
+- `&gt;` → `>`
+- `&amp;` → `&`
+- `&quot;` → `"`
+- `&apos;` → `'`
+
 #### Pre-computed Snapshots
 
 Generate snapshot once and reuse for multiple operations:

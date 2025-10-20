@@ -4,6 +4,7 @@ import { initializeClient } from './llm.js';
 import { createWorkspace } from './workspace.js';
 import fs from 'fs/promises';
 import path from 'path';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -47,12 +48,20 @@ describe('Static Mode Stress Tests', () => {
             workspace = await createWorkspace(tarballBuffer);
             console.log(`✓ Workspace created at: ${workspace.path}`);
 
+            // Install dependencies
+            console.log('Installing dependencies...');
+            execSync('npm install', {
+                cwd: workspace.path,
+                stdio: 'ignore'
+            });
+            console.log('✓ Dependencies installed');
+
             // Read AI_RULES.md from workspace
             const aiRulesPath = path.join(workspace.path, 'AI_RULES.md');
             aiRules = await fs.readFile(aiRulesPath, 'utf-8');
             console.log('✓ AI_RULES.md loaded');
         }
-    }, 30000);
+    }, 120000);
 
     afterEach(async () => {
         if (workspace) {
@@ -225,6 +234,14 @@ export default function Component${i}() {
             const content = await fs.readFile(fullPath, 'utf-8');
             expect(content.length).toBeGreaterThan(0);
         }
+
+        // Verify the generated code builds successfully
+        console.log('\n✓ All files written, running build...');
+        execSync('npm run build', {
+            cwd: workspace.path,
+            stdio: 'inherit'
+        });
+        console.log('✓ Build passed');
 
         console.log('\n=== Many Files Output Test Complete ===\n');
     }, 300000);
@@ -536,10 +553,6 @@ export function parseXml(input: string): string {
                 const fileCount = result.filesWritten.length;
 
                 if (fileCount > 0) {
-                    results.successful++;
-                    results.filesWritten.push(fileCount);
-                    console.log(`  ✓ Success: ${fileCount} files in ${duration}ms`);
-
                     // Verify files exist and have content
                     for (const file of result.filesWritten) {
                         const fullPath = path.join(workspace.path, file.path);
@@ -547,6 +560,25 @@ export function parseXml(input: string): string {
                         if (content.length === 0) {
                             throw new Error(`File ${file.path} is empty`);
                         }
+                    }
+
+                    // Verify the code is valid by running build
+                    try {
+                        execSync('npm run build', {
+                            cwd: workspace.path,
+                            stdio: 'pipe'
+                        });
+                        console.log(`  ✓ Success: ${fileCount} files in ${duration}ms, build passed`);
+                        results.successful++;
+                        results.filesWritten.push(fileCount);
+                    } catch (buildError) {
+                        results.failed++;
+                        results.errors.push({
+                            iteration: i + 1,
+                            prompt,
+                            reason: `Build failed: ${buildError.message}`
+                        });
+                        console.log(`  ✗ Failed: ${fileCount} files written but build failed`);
                     }
                 } else {
                     results.failed++;

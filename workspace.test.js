@@ -361,6 +361,163 @@ describe('Workspace', () => {
         });
     });
 
+    describe('Workspace.deserializeXmlOutput', () => {
+        test('decodes basic HTML entities in file content', async () => {
+            const workspace = await createWorkspace(testTarGz);
+
+            const xmlContent = `
+<sg-file path="src/test.js">
+const lessThan = 5 &lt; 10;
+const greaterThan = 10 &gt; 5;
+const ampersand = &quot;Tom &amp; Jerry&quot;;
+const quote = &quot;Hello World&quot;;
+const apos = &apos;Hello&apos;;
+</sg-file>
+`;
+
+            const filesWritten = await workspace.deserializeXmlOutput(xmlContent, true);
+
+            expect(filesWritten.length).toBe(1);
+            expect(filesWritten[0].path).toBe('src/test.js');
+
+            const content = await fs.readFile(path.join(workspace.path, 'src/test.js'), 'utf-8');
+            expect(content).toContain('5 < 10');
+            expect(content).toContain('10 > 5');
+            expect(content).toContain('Tom & Jerry');
+            expect(content).toContain('"Hello World"');
+            expect(content).toContain("'Hello'");
+
+            await workspace.delete();
+        });
+
+        test('decodes HTML entities in JSX/TSX arrow functions', async () => {
+            const workspace = await createWorkspace(testTarGz);
+
+            const xmlContent = `
+<sg-file path="src/Component.tsx">
+import React from 'react';
+
+const Component = () =&gt; {
+  const handleClick = () =&gt; {
+    console.log('clicked');
+  };
+
+  return &lt;button onClick={handleClick}&gt;Click me&lt;/button&gt;;
+};
+
+export default Component;
+</sg-file>
+`;
+
+            const filesWritten = await workspace.deserializeXmlOutput(xmlContent, true);
+
+            expect(filesWritten.length).toBe(1);
+            const content = await fs.readFile(path.join(workspace.path, 'src/Component.tsx'), 'utf-8');
+
+            // Verify arrow functions are properly decoded
+            expect(content).toContain('const Component = () => {');
+            expect(content).toContain('const handleClick = () => {');
+
+            // Verify JSX tags are properly decoded
+            expect(content).toContain('<button onClick={handleClick}>Click me</button>');
+
+            await workspace.delete();
+        });
+
+        test('decodes mixed HTML entities in complex code', async () => {
+            const workspace = await createWorkspace(testTarGz);
+
+            const xmlContent = `
+<sg-file path="src/utils.ts">
+export const compare = (a: number, b: number) =&gt; {
+  if (a &lt; b) return -1;
+  if (a &gt; b) return 1;
+  return 0;
+};
+
+export const escapeHtml = (str: string) =&gt; {
+  return str
+    .replace(/&amp;/g, &quot;&amp;amp;&quot;)
+    .replace(/&lt;/g, &quot;&amp;lt;&quot;)
+    .replace(/&gt;/g, &quot;&amp;gt;&quot;);
+};
+</sg-file>
+`;
+
+            const filesWritten = await workspace.deserializeXmlOutput(xmlContent, true);
+
+            expect(filesWritten.length).toBe(1);
+            const content = await fs.readFile(path.join(workspace.path, 'src/utils.ts'), 'utf-8');
+
+            // Verify arrow functions
+            expect(content).toContain('export const compare = (a: number, b: number) => {');
+            expect(content).toContain('export const escapeHtml = (str: string) => {');
+
+            // Verify comparison operators
+            expect(content).toContain('if (a < b) return -1;');
+            expect(content).toContain('if (a > b) return 1;');
+
+            // Verify string content with entities
+            expect(content).toContain('.replace(/&/g, "&amp;")');
+            expect(content).toContain('.replace(/</g, "&lt;")');
+            expect(content).toContain('.replace(/>/g, "&gt;")');
+
+            await workspace.delete();
+        });
+
+        test('handles files without HTML entities', async () => {
+            const workspace = await createWorkspace(testTarGz);
+
+            const xmlContent = `
+<sg-file path="src/simple.js">
+const hello = "world";
+console.log(hello);
+</sg-file>
+`;
+
+            const filesWritten = await workspace.deserializeXmlOutput(xmlContent, true);
+
+            expect(filesWritten.length).toBe(1);
+            const content = await fs.readFile(path.join(workspace.path, 'src/simple.js'), 'utf-8');
+            expect(content).toBe('const hello = "world";\nconsole.log(hello);');
+
+            await workspace.delete();
+        });
+
+        test('decodes entities in multiple files', async () => {
+            const workspace = await createWorkspace(testTarGz);
+
+            const xmlContent = `
+<sg-file path="src/file1.ts">
+const func1 = () =&gt; true;
+</sg-file>
+
+<sg-file path="src/file2.ts">
+const func2 = () =&gt; false;
+</sg-file>
+
+<sg-file path="src/file3.tsx">
+export default () =&gt; &lt;div&gt;Hello&lt;/div&gt;;
+</sg-file>
+`;
+
+            const filesWritten = await workspace.deserializeXmlOutput(xmlContent, true);
+
+            expect(filesWritten.length).toBe(3);
+
+            const content1 = await fs.readFile(path.join(workspace.path, 'src/file1.ts'), 'utf-8');
+            expect(content1).toBe('const func1 = () => true;');
+
+            const content2 = await fs.readFile(path.join(workspace.path, 'src/file2.ts'), 'utf-8');
+            expect(content2).toBe('const func2 = () => false;');
+
+            const content3 = await fs.readFile(path.join(workspace.path, 'src/file3.tsx'), 'utf-8');
+            expect(content3).toBe('export default () => <div>Hello</div>;');
+
+            await workspace.delete();
+        });
+    });
+
     describe('Workspace.delete', () => {
         test('removes workspace directory', async () => {
             const workspace = await createWorkspace(testTarGz);
