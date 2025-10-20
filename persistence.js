@@ -16,7 +16,7 @@ import path from 'path';
  * Messages are stored as serialized JSON strings.
  *
  * @interface ConversationPersistence
- * @method {Promise<string|null>} get(conversationID) - Retrieve all messages as JSON array string
+ * @method {Promise<Array|null>} get(conversationID) - Retrieve all messages as array of objects
  * @method {Promise<void>} append(conversationID, messageJson) - Append a single message (JSON string)
  * @method {Promise<void>} delete(conversationID) - Delete conversation data
  */
@@ -30,8 +30,7 @@ import path from 'path';
  * @example
  * const persistence = new InMemoryPersistence();
  * await persistence.append('conv-123', JSON.stringify({ role: 'user', content: 'Hello' }));
- * const messagesJson = await persistence.get('conv-123');
- * const messages = JSON.parse(messagesJson);
+ * const messages = await persistence.get('conv-123');
  * await persistence.delete('conv-123');
  */
 export class InMemoryPersistence {
@@ -42,11 +41,11 @@ export class InMemoryPersistence {
     /**
      * Retrieve all messages for a conversation
      * @param {string} conversationID - Conversation identifier
-     * @returns {Promise<string|null>} JSON array of messages or null
+     * @returns {Promise<Array|null>} Array of message objects or null
      */
     async get(conversationID) {
         const messages = this.store.get(conversationID);
-        return messages ? JSON.stringify(messages) : null;
+        return messages ? [...messages] : null; // Return a copy to prevent external mutations
     }
 
     /**
@@ -96,8 +95,7 @@ export class InMemoryPersistence {
  * @example
  * const persistence = new FileSystemPersistence('./conversations');
  * await persistence.append('conv-123', JSON.stringify({ role: 'user', content: 'Hello' }));
- * const messagesJson = await persistence.get('conv-123');
- * const messages = JSON.parse(messagesJson);
+ * const messages = await persistence.get('conv-123');
  * await persistence.delete('conv-123');
  */
 export class FileSystemPersistence {
@@ -139,7 +137,7 @@ export class FileSystemPersistence {
     /**
      * Retrieve all messages for a conversation
      * @param {string} conversationID - Conversation identifier
-     * @returns {Promise<string|null>} JSON array of messages or null
+     * @returns {Promise<Array|null>} Array of message objects or null
      */
     async get(conversationID) {
         try {
@@ -152,7 +150,7 @@ export class FileSystemPersistence {
                 .filter(line => line.trim())
                 .map(line => JSON.parse(line));
 
-            return JSON.stringify(messages);
+            return messages;
         } catch (error) {
             if (error.code === 'ENOENT') {
                 return null; // File doesn't exist

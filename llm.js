@@ -133,9 +133,9 @@ export async function execute(prompt, opts = {}) {
 
     // Load previous conversation history if using internal tracking
     if (useInternalConversations && conversationID) {
-        const historyJson = await persistence.get(conversationID);
-        if (historyJson) {
-            previousMessages = JSON.parse(historyJson);
+        const history = await persistence.get(conversationID);
+        if (history) {
+            previousMessages = history;
         }
     }
 

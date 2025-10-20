@@ -106,9 +106,8 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
         expect(testContent).toMatch(/add|subtract/);
 
         // Verify persistence stored all messages
-        const historyJson = await persistence.get(r1.conversationID);
-        expect(historyJson).toBeDefined();
-        const history = JSON.parse(historyJson);
+        const history = await persistence.get(r1.conversationID);
+        expect(history).toBeDefined();
         expect(history.length).toBe(6); // 3 user messages + 3 assistant messages
     }, 60000);
 
@@ -245,9 +244,8 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
         await persistence.append(convID, JSON.stringify({ role: 'assistant', content: 'Hi' }));
 
         // Retrieve
-        const historyJson = await persistence.get(convID);
-        expect(historyJson).toBeDefined();
-        const history = JSON.parse(historyJson);
+        const history = await persistence.get(convID);
+        expect(history).toBeDefined();
         expect(history.length).toBe(2);
         expect(history[0].role).toBe('user');
         expect(history[1].role).toBe('assistant');
@@ -275,9 +273,8 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
         expect(files[0]).toMatch(/test-conv-456.*\.jsonl$/);
 
         // Retrieve and verify
-        const historyJson = await persistence.get(convID);
-        expect(historyJson).toBeDefined();
-        const history = JSON.parse(historyJson);
+        const history = await persistence.get(convID);
+        expect(history).toBeDefined();
         expect(history.length).toBe(2);
         expect(history[0].content).toBe('Hello');
         expect(history[1].content).toBe('Hi');
@@ -285,8 +282,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
         // Append more (test JSONL append efficiency)
         await persistence.append(convID, JSON.stringify({ role: 'user', content: 'How are you?' }));
 
-        const updatedJson = await persistence.get(convID);
-        const updated = JSON.parse(updatedJson);
+        const updated = await persistence.get(convID);
         expect(updated.length).toBe(3);
 
         // Delete

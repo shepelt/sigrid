@@ -302,8 +302,8 @@ All persistence providers must implement three methods:
  * ConversationPersistence Interface
  */
 interface ConversationPersistence {
-  // Retrieve all messages as JSON array string
-  async get(conversationID: string): Promise<string | null>;
+  // Retrieve all messages as array of message objects
+  async get(conversationID: string): Promise<Array | null>;
 
   // Append a single message (JSON string)
   async append(conversationID: string, messageJson: string): Promise<void>;
@@ -442,8 +442,8 @@ class RedisPersistence {
     const messages = await this.redis.lrange(`conv:${conversationID}`, 0, -1);
     if (messages.length === 0) return null;
 
-    const parsed = messages.map(m => JSON.parse(m));
-    return JSON.stringify(parsed);
+    // Return array of parsed message objects
+    return messages.map(m => JSON.parse(m));
   }
 
   async append(conversationID, messageJson) {

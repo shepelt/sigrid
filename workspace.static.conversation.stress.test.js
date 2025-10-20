@@ -248,10 +248,9 @@ describe('Static Mode Conversation Stress Tests', () => {
         expect(remembered).toBe(true);
 
         // Verify conversation history size
-        const historyJson = await persistence.get(conversationID);
-        expect(historyJson).toBeDefined();
+        const history = await persistence.get(conversationID);
+        expect(history).toBeDefined();
 
-        const history = JSON.parse(historyJson);
         console.log(`\nConversation history: ${history.length} messages`);
 
         // Should have 2 messages per turn (user + assistant)
