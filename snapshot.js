@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import glob from 'glob';
+import { glob } from 'glob';
 import ignore from 'ignore';
 
 /**
@@ -89,17 +89,12 @@ export async function collectFiles(workspaceDir, options = {}) {
 
     // Collect all matching files
     for (const pattern of includePatterns) {
-        const matches = await new Promise((resolve, reject) => {
-            glob(pattern, {
-                cwd: workspaceDir,
-                nodir: true,
-                absolute: false,
-                ignore: ignorePatterns,
-                dot: true // Include dot files so they can be checked against .gitignore
-            }, (err, files) => {
-                if (err) reject(err);
-                else resolve(files);
-            });
+        const matches = await glob(pattern, {
+            cwd: workspaceDir,
+            nodir: true,
+            absolute: false,
+            ignore: ignorePatterns,
+            dot: true // Include dot files so they can be checked against .gitignore
         });
 
         for (const relativePath of matches) {
