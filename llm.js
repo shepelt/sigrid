@@ -18,7 +18,7 @@ const PURE_MODE_INSTRUCTIONS = [
     "Output should be raw content, ready to use directly."
 ];
 
-const TOOLING_INSTRUCTION = 
+const TOOLING_INSTRUCTION =
     "You can call tools `list_dir` (browse), `read_file` (preview), and `write_file` (save). " +
     "Stay within the sandbox. Write only small UTF-8 text files. For large edits, ask for a narrower scope.";
 
@@ -157,22 +157,22 @@ export async function execute(prompt, opts = {}) {
 
     // Add system instructions
     if (opts.instructions) {
-        const instructions = Array.isArray(opts.instructions) 
-            ? opts.instructions 
+        const instructions = Array.isArray(opts.instructions)
+            ? opts.instructions
             : [opts.instructions];
-        
+
         for (const inst of instructions) {
             messages.push({ role: "system", content: inst });
         }
     }
-    
+
     // Pure mode instructions
     if (opts.pure) {
         for (const inst of PURE_MODE_INSTRUCTIONS) {
             messages.push({ role: "system", content: inst });
         }
     }
-    
+
     // Add tooling instruction
     const toolingInstruction = opts.pure ? PURE_MODE_TOOLING_INSTRUCTION : TOOLING_INSTRUCTION;
     messages.push({ role: "system", content: toolingInstruction });
@@ -201,7 +201,7 @@ export async function execute(prompt, opts = {}) {
     if (useInternalConversations) {
         newMessages.push(userMessage);
     }
-    
+
     // Progress callback
     if (opts.progressCallback) {
         opts.progressCallback('start', 'Waiting for response...');
@@ -218,7 +218,7 @@ export async function execute(prompt, opts = {}) {
 
     // Initial API call
     const model = opts.model || DEFAULT_MODEL;
-    
+
     // Select tools based on pure mode and disabled tools
     let availableTools = opts.pure
         ? fileTools.filter(tool => tool.name !== 'write_file')
@@ -228,7 +228,7 @@ export async function execute(prompt, opts = {}) {
     if (opts.disableTools && Array.isArray(opts.disableTools)) {
         availableTools = availableTools.filter(tool => !opts.disableTools.includes(tool.name));
     }
-    
+
     const requestParams = {
         model,
         input: messages,
@@ -249,12 +249,12 @@ export async function execute(prompt, opts = {}) {
     if (opts.progressCallback) {
         opts.progressCallback('succeed', 'Response received');
     }
-    
+
     // Tool calling loop
     while (true) {
         const toolCalls = extractToolCalls(response);
         if (toolCalls.length === 0) break;
-        
+
         for (const fc of toolCalls) {
             try {
                 const args = JSON.parse(fc.arguments || "{}");
@@ -285,11 +285,11 @@ export async function execute(prompt, opts = {}) {
                 });
             }
         }
-        
+
         if (opts.progressCallback) {
             opts.progressCallback('start', 'Processing...');
         }
-        
+
         const followupParams = {
             model,
             input: messages,
@@ -382,7 +382,6 @@ async function _retry(apiClient, params, config, attempt) {
             });
         }
 
-        console.log(`⚠️  Rate limit hit. Retrying in ${cappedDelay.toFixed(1)}s... (attempt ${attempt}/${config.maxRetries})`);
         await sleep(cappedDelay * 1000);
 
         return _retry(apiClient, params, config, attempt + 1);
