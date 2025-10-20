@@ -68,24 +68,36 @@ export class Workspace {
     async _executeStatic(prompt, options) {
         // Generate or use provided snapshot
         let snapshot;
-        if (typeof options.snapshot === 'string') {
-            // Pre-computed snapshot provided
+
+        // For multi-turn conversations, always regenerate snapshot to include files from previous turns
+        const isMultiTurn = !!options.conversationID;
+
+        if (isMultiTurn) {
+            // Always generate fresh snapshot for continuation turns
+            // This ensures the LLM sees files written in previous turns
+            snapshot = await this.snapshot(typeof options.snapshot === 'object' ? options.snapshot : {});
+        } else if (typeof options.snapshot === 'string') {
+            // Pre-computed snapshot provided (first turn only)
             snapshot = options.snapshot;
         } else {
-            // Auto-generate snapshot
+            // Auto-generate snapshot (first turn)
             snapshot = await this.snapshot(options.snapshot || {});
         }
 
         // Construct final options (merge user options with static mode requirements)
         const finalOptions = {
-            ...options,  // Keep all user options (temperature, reasoningEffort, etc.)
+            ...options,  // Keep all user options (temperature, reasoningEffort, conversationID, conversationPersistence, etc.)
             workspace: this.path,
             instructions: [...(options.instructions || []), getStaticContextPrompt()],
             prompts: ['Here is the full codebase for context:', snapshot],
             disableTools: ['read_file', 'write_file']
+            // Note: conversationPersistence is optional
+            // - If provided: uses internal tracking (efficient, fresh snapshots)
+            // - If not provided: uses provider-managed conversations (snapshot duplication)
         };
 
         // Use builder as thin wrapper for execute()
+        // llm.js will handle conversation tracking internally for static mode
         const builder = new SigridBuilder();
         const result = await builder.execute(prompt, finalOptions);
 

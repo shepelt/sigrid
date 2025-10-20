@@ -4,7 +4,6 @@ import { initializeClient } from './llm.js';
 import { createWorkspace } from './workspace.js';
 import fs from 'fs/promises';
 import path from 'path';
-import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -48,20 +47,12 @@ describe('Static Mode Stress Tests', () => {
             workspace = await createWorkspace(tarballBuffer);
             console.log(`✓ Workspace created at: ${workspace.path}`);
 
-            // Install dependencies
-            console.log('Installing dependencies...');
-            execSync('npm install', {
-                cwd: workspace.path,
-                stdio: 'inherit'
-            });
-            console.log('✓ Dependencies installed');
-
             // Read AI_RULES.md from workspace
             const aiRulesPath = path.join(workspace.path, 'AI_RULES.md');
             aiRules = await fs.readFile(aiRulesPath, 'utf-8');
             console.log('✓ AI_RULES.md loaded');
         }
-    }, 120000);
+    }, 30000);
 
     afterEach(async () => {
         if (workspace) {

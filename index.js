@@ -26,6 +26,13 @@ import {
     Workspace
 } from './workspace.js';
 
+import {
+    InMemoryPersistence,
+    FileSystemPersistence,
+    getSigridPersistence,
+    setSigridPersistence
+} from './persistence.js';
+
 // Factory function that creates a new builder instance
 function sigrid() {
     return new SigridBuilder();
@@ -44,6 +51,10 @@ sigrid.fileTools = fileTools;
 sigrid.createWorkspace = createWorkspace;
 sigrid.openWorkspace = openWorkspace;
 sigrid.Workspace = Workspace;
+sigrid.InMemoryPersistence = InMemoryPersistence;
+sigrid.FileSystemPersistence = FileSystemPersistence;
+sigrid.getSigridPersistence = getSigridPersistence;
+sigrid.setSigridPersistence = setSigridPersistence;
 
 // Default export: factory function with attached methods
 export default sigrid;
@@ -61,5 +72,9 @@ export {
     executeFileTool,
     createWorkspace,
     openWorkspace,
-    Workspace
+    Workspace,
+    InMemoryPersistence,
+    FileSystemPersistence,
+    getSigridPersistence,
+    setSigridPersistence
 };
