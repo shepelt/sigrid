@@ -118,6 +118,7 @@ function generateConversationID() {
  * @param {string[]} opts.disableTools - Array of tool names to disable (e.g., ['read_file', 'write_file'])
  * @param {Function} opts.progressCallback - Progress callback (action, message)
  * @param {ConversationPersistence} opts.conversationPersistence - Persistence provider (if provided, enables internal conversation tracking; otherwise uses provider-managed conversations)
+ * @param {boolean} opts.saveAssistantMessage - Whether to save assistant message to persistence (default: true). Set to false if caller will save it manually.
  * @returns {Promise<{content: string, conversationID: string}>}
  */
 export async function execute(prompt, opts = {}) {
@@ -314,8 +315,12 @@ export async function execute(prompt, opts = {}) {
 
     // Save assistant response to persistence for internal tracking
     if (useInternalConversations) {
-        const assistantMessage = { role: "assistant", content: response.output_text };
-        newMessages.push(assistantMessage);
+        const saveAssistant = opts.saveAssistantMessage !== false; // Default to true
+
+        if (saveAssistant) {
+            const assistantMessage = { role: "assistant", content: response.output_text };
+            newMessages.push(assistantMessage);
+        }
 
         // Append new messages to persistence
         for (const message of newMessages) {

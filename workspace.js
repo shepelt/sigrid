@@ -91,7 +91,8 @@ export class Workspace {
             workspace: this.path,
             instructions: [...(options.instructions || []), getStaticContextPrompt()],
             prompts: ['Here is the full codebase for context:', snapshot],
-            disableTools: ['read_file', 'write_file']
+            disableTools: ['read_file', 'write_file'],
+            saveAssistantMessage: false  // We'll save compact version ourselves
             // Note: conversationPersistence is optional
             // - If provided: uses internal tracking (efficient, fresh snapshots)
             // - If not provided: uses provider-managed conversations (snapshot duplication)
@@ -106,6 +107,22 @@ export class Workspace {
         // decodeHtmlEntities defaults to false (following DYAD's proven approach)
         const decodeEntities = options.decodeHtmlEntities === true;
         result.filesWritten = await this.deserializeXmlOutput(result.content, decodeEntities);
+
+        // Save compact assistant message to persistence (default behavior for static mode)
+        // Only save if using internal conversation tracking with persistence
+        if (options.conversationPersistence && result.conversationID) {
+            const compactContent = result.filesWritten.length > 0
+                ? `Modified: ${result.filesWritten.map(f => f.path).join(', ')}`
+                : result.content.replace(/<sg-file[^>]*>[\s\S]*?<\/sg-file>/g, '').trim();
+
+            await options.conversationPersistence.append(
+                result.conversationID,
+                JSON.stringify({
+                    role: 'assistant',
+                    content: compactContent
+                })
+            );
+        }
 
         // Filter out <sg-file> tags from result.content for static mode
         result.content = result.content.replace(/<sg-file[^>]*>[\s\S]*?<\/sg-file>/g, '').trim();
@@ -293,6 +310,114 @@ export class Workspace {
             .replace(/&quot;/g, entities['&quot;'])
             .replace(/&apos;/g, entities['&apos;'])
             .replace(/&amp;/g, entities['&amp;']);
+    }
+
+    /**
+     * Compact conversation history by replacing verbose assistant responses with file paths
+     * @param {string} conversationID - The conversation ID to compact
+     * @param {Object} options - Compaction options
+     * @param {Object} options.persistence - Persistence provider (required)
+     * @param {string} options.mode - Compaction mode: 'files-only' (default) or 'user-only'
+     * @param {boolean} options.dryRun - Preview changes without modifying history (default: false)
+     * @returns {Promise<{originalTokens: number, compactedTokens: number, reduction: string, messagesProcessed: number, messagesCompacted: number}>}
+     *
+     * @example
+     * // Compact existing conversation history
+     * const result = await workspace.compactHistory('project-123', {
+     *   mode: 'files-only',
+     *   persistence: myPersistence
+     * });
+     * console.log(`Reduced by ${result.reduction}`);
+     *
+     * // Preview without modifying
+     * const preview = await workspace.compactHistory('project-123', {
+     *   mode: 'files-only',
+     *   persistence: myPersistence,
+     *   dryRun: true
+     * });
+     */
+    async compactHistory(conversationID, options = {}) {
+        const { mode = 'files-only', persistence, dryRun = false } = options;
+
+        if (!persistence) {
+            throw new Error('conversationPersistence required for compactHistory');
+        }
+
+        if (!conversationID) {
+            throw new Error('conversationID required for compactHistory');
+        }
+
+        // Load existing history
+        const history = await persistence.get(conversationID);
+        if (!history || history.length === 0) {
+            return {
+                originalTokens: 0,
+                compactedTokens: 0,
+                reduction: '0%',
+                messagesProcessed: 0,
+                messagesCompacted: 0
+            };
+        }
+
+        let messagesCompacted = 0;
+        const originalSize = JSON.stringify(history).length;
+
+        // Process each message
+        const compactedHistory = history.map(msg => {
+            if (msg.role !== 'assistant') return msg;
+
+            if (mode === 'files-only') {
+                // Extract file paths from <sg-file> tags
+                const fileRegex = /<sg-file[^>]*path="([^"]+)"/g;
+                const files = [];
+                let match;
+                while ((match = fileRegex.exec(msg.content)) !== null) {
+                    files.push(match[1]);
+                }
+
+                if (files.length > 0) {
+                    messagesCompacted++;
+                    return {
+                        ...msg,
+                        content: `Modified: ${files.join(', ')}`,
+                        _original_length: msg.content.length // for debugging
+                    };
+                }
+            }
+
+            return msg;
+        });
+
+        const compactedSize = JSON.stringify(compactedHistory).length;
+
+        // Return early if dry run
+        if (dryRun) {
+            return {
+                originalTokens: Math.ceil(originalSize / 4),
+                compactedTokens: Math.ceil(compactedSize / 4),
+                reduction: originalSize > 0
+                    ? `${((1 - compactedSize / originalSize) * 100).toFixed(1)}%`
+                    : '0%',
+                messagesProcessed: history.length,
+                messagesCompacted
+            };
+        }
+
+        // Write compacted history back
+        await persistence.delete(conversationID);
+        for (const msg of compactedHistory) {
+            await persistence.append(conversationID, JSON.stringify(msg));
+        }
+
+        return {
+            originalTokens: Math.ceil(originalSize / 4),
+            compactedTokens: Math.ceil(compactedSize / 4),
+            reduction: originalSize > 0
+                ? `${((1 - compactedSize / originalSize) * 100).toFixed(1)}%`
+                : '0%',
+            messagesProcessed: history.length,
+            messagesCompacted
+        };
     }
 
     /**
