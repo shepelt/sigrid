@@ -131,6 +131,12 @@ const result2 = await sigrid()
     conversationID: result1.conversationID
   });
 
+// Reasoning effort (for GPT-5 models)
+const result = await sigrid()
+  .model('gpt-5-mini')
+  .reasoningEffort('high')
+  .execute('Solve this complex algorithm problem');
+
 // Combine everything
 const result = await sigrid()
   .pure()
@@ -170,6 +176,7 @@ console.log(result.conversationID);
 - `.pure()` - Enable pure output mode (no explanations)
 - `.conversation()` - Enable conversation mode
 - `.workspace(path)` - Set workspace directory (overrides global sandbox)
+- `.reasoningEffort(level)` - Set reasoning effort level: "minimal", "low", "medium", or "high" (GPT-5 models only)
 - `.progress(callback)` - Set progress callback
 - `.execute(prompt, opts?)` - Execute the prompt
 
@@ -196,6 +203,7 @@ console.log(result.conversationID);
   conversationID: null,         // Existing conversation ID
   conversationPersistence: null,// Persistence provider (enables internal tracking)
   workspace: null,              // Workspace directory (overrides setSandboxRoot)
+  reasoningEffort: null,        // Reasoning effort: "minimal", "low", "medium", "high" (GPT-5 only)
   progressCallback: null,       // Progress callback function
   client: null                  // Custom OpenAI client
 }

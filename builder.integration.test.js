@@ -226,6 +226,28 @@ describe('Builder Integration Tests', () => {
         }, 30000);
     });
 
+    describe('Reasoning Effort', () => {
+        testFn('should accept reasoning effort parameter', async () => {
+            const result = await sigrid()
+                .model('gpt-5-mini')
+                .reasoningEffort('medium')
+                .execute('What is 2+2?');
+
+            expect(result).toHaveProperty('content');
+            expect(result.content).toMatch(/4/);
+        }, 30000);
+
+        testFn('should combine reasoning effort with other options', async () => {
+            const result = await sigrid()
+                .model('gpt-5-mini')
+                .reasoningEffort('high')
+                .instruction('Be concise')
+                .execute('Explain what 5+5 equals');
+
+            expect(result.content).toMatch(/10/);
+        }, 30000);
+    });
+
     describe('Backward Compatibility', () => {
         testFn('should support original execute API', async () => {
             const result = await sigrid.execute('Say "legacy" and nothing else', {

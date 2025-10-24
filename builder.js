@@ -8,6 +8,13 @@ import { execute as executeCore } from './llm.js';
  *   .instruction('Be brief')
  *   .model('gpt-4o-mini')
  *   .execute('What is 2+2?');
+ *
+ * @example
+ * // Using reasoning effort with GPT-5
+ * const result = await sigrid()
+ *   .model('gpt-5-mini')
+ *   .reasoningEffort('high')
+ *   .execute('Solve this complex problem...');
  */
 export class SigridBuilder {
     constructor() {
@@ -119,6 +126,16 @@ export class SigridBuilder {
      */
     disableTools(toolNames) {
         this.options.disableTools = toolNames;
+        return this;
+    }
+
+    /**
+     * Set reasoning effort level (for reasoning models like GPT-5)
+     * @param {string} level - Reasoning effort level: "minimal", "low", "medium", or "high"
+     * @returns {SigridBuilder} this for chaining
+     */
+    reasoningEffort(level) {
+        this.options.reasoningEffort = level;
         return this;
     }
 
