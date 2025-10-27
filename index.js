@@ -23,7 +23,8 @@ import {
 import {
     createWorkspace,
     openWorkspace,
-    Workspace
+    Workspace,
+    ProgressEvents
 } from './workspace.js';
 
 import {
@@ -51,6 +52,7 @@ sigrid.fileTools = fileTools;
 sigrid.createWorkspace = createWorkspace;
 sigrid.openWorkspace = openWorkspace;
 sigrid.Workspace = Workspace;
+sigrid.ProgressEvents = ProgressEvents;
 sigrid.InMemoryPersistence = InMemoryPersistence;
 sigrid.FileSystemPersistence = FileSystemPersistence;
 sigrid.getSigridPersistence = getSigridPersistence;
@@ -73,6 +75,7 @@ export {
     createWorkspace,
     openWorkspace,
     Workspace,
+    ProgressEvents,
     InMemoryPersistence,
     FileSystemPersistence,
     getSigridPersistence,
