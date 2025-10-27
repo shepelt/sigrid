@@ -1,4 +1,5 @@
-import { execute as executeCore } from './llm.js';
+import { execute as executeDynamic } from './llm-dynamic.js';
+import { executeStatic } from './llm-static.js';
 
 /**
  * Fluent builder for Sigrid LLM execution
@@ -15,10 +16,24 @@ import { execute as executeCore } from './llm.js';
  *   .model('gpt-5-mini')
  *   .reasoningEffort('high')
  *   .execute('Solve this complex problem...');
+ *
+ * @example
+ * // Using static mode (default) with streaming
+ * const result = await sigrid()
+ *   .static()
+ *   .stream((chunk) => process.stdout.write(chunk))
+ *   .execute('Hello');
+ *
+ * @example
+ * // Using dynamic mode with tool calling
+ * const result = await sigrid()
+ *   .dynamic()
+ *   .execute('Create a file called test.txt');
  */
 export class SigridBuilder {
     constructor() {
         this.options = {};
+        this.mode = 'static';  // Default to static mode
     }
 
     /**
@@ -91,7 +106,8 @@ export class SigridBuilder {
     }
 
     /**
-     * Enable pure output mode (no explanations)
+     * Enable pure output mode (no explanations, read-only tools)
+     * Only works in dynamic mode
      * @returns {SigridBuilder} this for chaining
      */
     pure() {
@@ -140,6 +156,37 @@ export class SigridBuilder {
     }
 
     /**
+     * Use static mode (no tooling, uses chat.completions API)
+     * Static mode is the default. Supports streaming.
+     * @returns {SigridBuilder} this for chaining
+     */
+    static() {
+        this.mode = 'static';
+        return this;
+    }
+
+    /**
+     * Use dynamic mode (supports tooling and server-side conversations)
+     * Dynamic mode uses the conversation API and supports tool calling.
+     * @returns {SigridBuilder} this for chaining
+     */
+    dynamic() {
+        this.mode = 'dynamic';
+        return this;
+    }
+
+    /**
+     * Enable streaming output (static mode only)
+     * @param {Function} callback - Callback for streaming chunks: (chunk: string) => void
+     * @returns {SigridBuilder} this for chaining
+     */
+    stream(callback) {
+        this.options.stream = true;
+        this.options.streamCallback = callback;
+        return this;
+    }
+
+    /**
      * Execute the prompt with accumulated options
      * @param {string} prompt - User prompt
      * @param {Object} additionalOpts - Additional options to merge
@@ -147,6 +194,11 @@ export class SigridBuilder {
      */
     async execute(prompt, additionalOpts = {}) {
         const finalOptions = { ...this.options, ...additionalOpts };
-        return executeCore(prompt, finalOptions);
+
+        if (this.mode === 'static') {
+            return executeStatic(prompt, finalOptions);
+        } else {
+            return executeDynamic(prompt, finalOptions);
+        }
     }
 }

@@ -4,8 +4,6 @@ import {
     fileTools,
     executeFileTool
 } from "./filetooling.js";
-import { getSigridPersistence } from "./persistence.js";
-import { randomBytes } from "crypto";
 
 let client = null;
 
@@ -96,65 +94,32 @@ export function extractText(r) {
 }
 
 /**
- * Generate a unique conversation ID
- * @returns {string} Conversation ID
- */
-function generateConversationID() {
-    return `conv_${randomBytes(16).toString('hex')}`;
-}
-
-/**
- * Execute LLM inference with tool calling support
+ * Execute LLM inference with tool calling support (server-side conversations)
  * @param {string} prompt - User prompt
  * @param {Object} opts - Options
  * @param {OpenAI} opts.client - Custom OpenAI client (optional, uses initialized client by default)
  * @param {string} opts.model - Model name (default: "gpt-5-mini")
  * @param {string|string[]} opts.instructions - System instruction(s)
  * @param {string|string[]} opts.prompts - Additional user prompts inserted before main prompt
- * @param {boolean} opts.conversation - Enable conversation mode
- * @param {string} opts.conversationID - Existing conversation ID
+ * @param {boolean} opts.conversation - Enable server-side conversation mode
+ * @param {string} opts.conversationID - Existing conversation ID (server-side)
  * @param {boolean} opts.pure - Pure output mode (no explanations)
  * @param {string} opts.reasoningEffort - Reasoning effort level: "minimal", "low", "medium", "high" (GPT-5 only)
  * @param {string[]} opts.disableTools - Array of tool names to disable (e.g., ['read_file', 'write_file'])
  * @param {Function} opts.progressCallback - Progress callback (action, message)
- * @param {ConversationPersistence} opts.conversationPersistence - Persistence provider (if provided, enables internal conversation tracking; otherwise uses provider-managed conversations)
- * @param {boolean} opts.saveAssistantMessage - Whether to save assistant message to persistence (default: true). Set to false if caller will save it manually.
  * @returns {Promise<{content: string, conversationID: string}>}
  */
 export async function execute(prompt, opts = {}) {
     const apiClient = opts.client || getClient();
 
-    // Use internal conversation tracking if user provides BOTH conversation: true AND a persistence provider
-    // Otherwise use provider-managed conversations (e.g., OpenAI's conversation API)
-    const useInternalConversations = opts.conversation && opts.conversationPersistence !== undefined;
-
-    const persistence = opts.conversationPersistence;  // Only use if provided
     let conversationID = opts.conversationID;
-    let previousMessages = [];
-
-    // Load previous conversation history if using internal tracking
-    if (useInternalConversations && conversationID) {
-        const history = await persistence.get(conversationID);
-        if (history) {
-            previousMessages = history;
-        }
-    }
-
     const messages = [];
 
     // Prepare conversation for provider-managed conversations (OpenAI)
-    if (!useInternalConversations && opts.conversation && !conversationID) {
+    if (opts.conversation && !conversationID) {
         const conv = await apiClient.conversations.create();
         conversationID = conv.id;
     }
-
-    // Generate conversationID for internal tracking if needed
-    if (useInternalConversations && !conversationID) {
-        conversationID = generateConversationID();
-    }
-
-    // Track new messages for persistence (only user and assistant messages)
-    const newMessages = [];
 
     // Add system instructions
     if (opts.instructions) {
@@ -189,19 +154,8 @@ export async function execute(prompt, opts = {}) {
         }
     }
 
-    // Add previous conversation history (for internal tracking)
-    if (useInternalConversations && previousMessages.length > 0) {
-        messages.push(...previousMessages);
-    }
-
     // Add current user prompt
-    const userMessage = { role: "user", content: prompt };
-    messages.push(userMessage);
-
-    // Track new message for persistence
-    if (useInternalConversations) {
-        newMessages.push(userMessage);
-    }
+    messages.push({ role: "user", content: prompt });
 
     // Progress callback
     if (opts.progressCallback) {
@@ -233,7 +187,7 @@ export async function execute(prompt, opts = {}) {
     const requestParams = {
         model,
         input: messages,
-        conversation: useInternalConversations ? undefined : conversationID,  // Use provider conversation only if not internal
+        conversation: conversationID,  // Server-side conversation
         tools: availableTools,
         tool_choice: "auto"
     };
@@ -294,7 +248,7 @@ export async function execute(prompt, opts = {}) {
         const followupParams = {
             model,
             input: messages,
-            conversation: useInternalConversations ? undefined : response.conversation,  // Use provider conversation only if not internal
+            conversation: response.conversation,  // Server-side conversation
             tools: availableTools,
             tool_choice: "auto"
         };
@@ -313,24 +267,9 @@ export async function execute(prompt, opts = {}) {
         }
     }
 
-    // Save assistant response to persistence for internal tracking
-    if (useInternalConversations) {
-        const saveAssistant = opts.saveAssistantMessage !== false; // Default to true
-
-        if (saveAssistant) {
-            const assistantMessage = { role: "assistant", content: response.output_text };
-            newMessages.push(assistantMessage);
-        }
-
-        // Append new messages to persistence
-        for (const message of newMessages) {
-            await persistence.append(conversationID, JSON.stringify(message));
-        }
-    }
-
     return {
         content: response.output_text,
-        conversationID: useInternalConversations ? conversationID : response.conversation?.id
+        conversationID: response.conversation?.id
     };
 }
 

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, beforeEach, afterEach } from '@jest/globals';
 import 'dotenv/config';
-import { initializeClient } from './llm.js';
+import { initializeClient } from './llm-dynamic.js';
 import { createWorkspace } from './workspace.js';
 import fs from 'fs/promises';
 import path from 'path';

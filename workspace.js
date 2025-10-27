@@ -30,12 +30,14 @@ export class Workspace {
      * @param {string} options.model - Model to use
      * @param {string[]} options.instructions - System instructions
      * @param {string} options.instruction - Single instruction
-     * @param {boolean} options.pure - Pure mode (read-only)
+     * @param {boolean} options.pure - Pure mode (read-only, dynamic mode only)
      * @param {boolean} options.conversation - Conversation mode
      * @param {Function} options.progressCallback - Progress callback
      * @param {string} options.mode - Execution mode ('static' for static context loading)
      * @param {Object|string} options.snapshot - Snapshot config or pre-computed snapshot string
      * @param {boolean} options.decodeHtmlEntities - Decode HTML entities in static mode output (default: false)
+     * @param {boolean} options.stream - Enable streaming (static mode only)
+     * @param {Function} options.streamCallback - Stream callback (static mode only): (chunk: string) => void
      * @returns {Promise<{content: string, conversationID: string, filesWritten?: Array}>}
      */
     async execute(prompt, options = {}) {
@@ -44,8 +46,9 @@ export class Workspace {
             return await this._executeStatic(prompt, options);
         }
 
-        // Standard execution
+        // Standard execution (uses dynamic mode with tooling)
         const builder = new SigridBuilder();
+        builder.dynamic();  // Explicitly use dynamic mode for tool calling
         builder.workspace(this.path);
 
         // Apply any additional options
@@ -85,35 +88,53 @@ export class Workspace {
             snapshot = await this.snapshot(options.snapshot || {});
         }
 
+        // Handle streaming mode - accumulate chunks
+        let accumulatedContent = '';
+        let streamCallback = null;
+
+        if (options.stream) {
+            // Wrap user's streamCallback to accumulate chunks
+            const userStreamCallback = options.streamCallback;
+            streamCallback = (chunk) => {
+                accumulatedContent += chunk;
+                if (userStreamCallback) {
+                    userStreamCallback(chunk);
+                }
+            };
+        }
+
         // Construct final options (merge user options with static mode requirements)
         const finalOptions = {
             ...options,  // Keep all user options (temperature, reasoningEffort, conversationID, conversationPersistence, etc.)
             workspace: this.path,
             instructions: [...(options.instructions || []), getStaticContextPrompt()],
             prompts: ['Here is the full codebase for context:', snapshot],
-            disableTools: ['read_file', 'write_file'],
-            saveAssistantMessage: false  // We'll save compact version ourselves
+            saveAssistantMessage: false,  // We'll save compact version ourselves
+            streamCallback  // Use wrapped callback if streaming
             // Note: conversationPersistence is optional
             // - If provided: uses internal tracking (efficient, fresh snapshots)
-            // - If not provided: uses provider-managed conversations (snapshot duplication)
+            // - If not provided: not supported in static mode (no server-side conversations)
         };
 
-        // Use builder as thin wrapper for execute()
-        // llm.js will handle conversation tracking internally for static mode
+        // Use builder with static mode (uses llm-static.js - no tooling, supports streaming)
         const builder = new SigridBuilder();
+        builder.static();  // Explicitly use static mode
         const result = await builder.execute(prompt, finalOptions);
+
+        // Get content from either accumulated chunks (streaming) or result (non-streaming)
+        const fullContent = options.stream ? accumulatedContent : result.content;
 
         // Deserialize XML output to filesystem
         // decodeHtmlEntities defaults to false (following DYAD's proven approach)
         const decodeEntities = options.decodeHtmlEntities === true;
-        result.filesWritten = await this.deserializeXmlOutput(result.content, decodeEntities);
+        result.filesWritten = await this.deserializeXmlOutput(fullContent, decodeEntities);
 
         // Save compact assistant message to persistence (default behavior for static mode)
         // Only save if using internal conversation tracking with persistence
         if (options.conversationPersistence && result.conversationID) {
             const compactContent = result.filesWritten.length > 0
                 ? `Modified: ${result.filesWritten.map(f => f.path).join(', ')}`
-                : result.content.replace(/<sg-file[^>]*>[\s\S]*?<\/sg-file>/g, '').trim();
+                : fullContent.replace(/<sg-file[^>]*>[\s\S]*?<\/sg-file>/g, '').trim();
 
             await options.conversationPersistence.append(
                 result.conversationID,
@@ -125,7 +146,8 @@ export class Workspace {
         }
 
         // Filter out <sg-file> tags from result.content for static mode
-        result.content = result.content.replace(/<sg-file[^>]*>[\s\S]*?<\/sg-file>/g, '').trim();
+        // In streaming mode, result.content is already empty, so we set it to the filtered fullContent
+        result.content = fullContent.replace(/<sg-file[^>]*>[\s\S]*?<\/sg-file>/g, '').trim();
 
         return result;
     }

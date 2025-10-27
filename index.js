@@ -11,7 +11,7 @@ import {
     execute,
     extractToolCalls,
     extractText
-} from './llm.js';
+} from './llm-dynamic.js';
 
 import {
     fileTools,
