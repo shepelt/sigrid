@@ -9,6 +9,20 @@ import { createSnapshot } from './snapshot.js';
 import { getStaticContextPrompt } from './prompts.js';
 
 /**
+ * Progress event constants for workspace operations
+ */
+export const ProgressEvents = {
+    SNAPSHOT_GENERATING: 'SNAPSHOT_GENERATING',
+    SNAPSHOT_GENERATED: 'SNAPSHOT_GENERATED',
+    RESPONSE_STREAMING: 'RESPONSE_STREAMING',
+    RESPONSE_STREAMED: 'RESPONSE_STREAMED',
+    RESPONSE_WAITING: 'RESPONSE_WAITING',
+    RESPONSE_RECEIVED: 'RESPONSE_RECEIVED',
+    FILES_WRITING: 'FILES_WRITING',
+    FILES_WRITTEN: 'FILES_WRITTEN'
+};
+
+/**
  * Workspace represents an isolated working directory for Sigrid
  * Created from a scaffold tarball, can be modified and exported
  */
@@ -70,6 +84,8 @@ export class Workspace {
      * @private
      */
     async _executeStatic(prompt, options) {
+        const progressCallback = options.progressCallback;
+
         // Generate or use provided snapshot
         let snapshot;
 
@@ -79,13 +95,17 @@ export class Workspace {
         if (isMultiTurn) {
             // Always generate fresh snapshot for continuation turns
             // This ensures the LLM sees files written in previous turns
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATING);
             snapshot = await this.snapshot(typeof options.snapshot === 'object' ? options.snapshot : {});
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATED);
         } else if (typeof options.snapshot === 'string') {
             // Pre-computed snapshot provided (first turn only)
             snapshot = options.snapshot;
         } else {
             // Auto-generate snapshot (first turn)
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATING);
             snapshot = await this.snapshot(options.snapshot || {});
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATED);
         }
 
         // Handle streaming mode - accumulate chunks
@@ -119,7 +139,16 @@ export class Workspace {
         // Use builder with static mode (uses llm-static.js - no tooling, supports streaming)
         const builder = new SigridBuilder();
         builder.static();  // Explicitly use static mode
+
+        if (progressCallback) {
+            progressCallback(options.stream ? ProgressEvents.RESPONSE_STREAMING : ProgressEvents.RESPONSE_WAITING);
+        }
+
         const result = await builder.execute(prompt, finalOptions);
+
+        if (progressCallback) {
+            progressCallback(options.stream ? ProgressEvents.RESPONSE_STREAMED : ProgressEvents.RESPONSE_RECEIVED);
+        }
 
         // Get content from either accumulated chunks (streaming) or result (non-streaming)
         const fullContent = options.stream ? accumulatedContent : result.content;
@@ -127,7 +156,12 @@ export class Workspace {
         // Deserialize XML output to filesystem
         // decodeHtmlEntities defaults to false (following DYAD's proven approach)
         const decodeEntities = options.decodeHtmlEntities === true;
+
+        if (progressCallback) progressCallback(ProgressEvents.FILES_WRITING);
         result.filesWritten = await this.deserializeXmlOutput(fullContent, decodeEntities);
+        if (progressCallback) {
+            progressCallback(ProgressEvents.FILES_WRITTEN, { count: result.filesWritten.length });
+        }
 
         // Save compact assistant message to persistence (default behavior for static mode)
         // Only save if using internal conversation tracking with persistence
