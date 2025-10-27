@@ -122,11 +122,12 @@ describe('Static Mode Progress Callback Tests', () => {
     });
 
     describe('Streaming Mode', () => {
-        testFn('should emit streaming events correctly', async () => {
+        testFn('should emit streaming and file events', async () => {
             console.log('\n=== Streaming Mode Test ===\n');
 
             const events = [];
             const chunks = [];
+            const fileEvents = [];
 
             await workspace.execute(
                 'Add a Badge component',
@@ -140,20 +141,51 @@ describe('Static Mode Progress Callback Tests', () => {
                     },
                     progressCallback: (event, data) => {
                         events.push({ event, data });
-                        console.log(`[${event}]${data ? ' ' + JSON.stringify(data) : ''}`);
+
+                        // Track file streaming events
+                        if (event === ProgressEvents.FILE_STREAMING_START ||
+                            event === ProgressEvents.FILE_STREAMING_CONTENT ||
+                            event === ProgressEvents.FILE_STREAMING_END) {
+                            fileEvents.push({ event, data });
+                            console.log(`  [FILE] ${event} - ${data.path || 'unknown'}`);
+                        } else {
+                            console.log(`[${event}]${data ? ' ' + JSON.stringify(data) : ''}`);
+                        }
                     }
                 }
             );
 
-            // Verify all 6 events
-            expect(events.length).toBe(6);
+            // Verify basic streaming events
+            const responseEvents = events.filter(e =>
+                e.event === ProgressEvents.RESPONSE_STREAMING ||
+                e.event === ProgressEvents.RESPONSE_STREAMED
+            );
+            expect(responseEvents.length).toBe(2);
+            expect(responseEvents[0].event).toBe(ProgressEvents.RESPONSE_STREAMING);
+            expect(responseEvents[1].event).toBe(ProgressEvents.RESPONSE_STREAMED);
 
-            // Verify streaming events (not waiting events)
-            expect(events[2].event).toBe(ProgressEvents.RESPONSE_STREAMING);
-            expect(events[3].event).toBe(ProgressEvents.RESPONSE_STREAMED);
+            // Verify file streaming events were emitted
+            const fileStarts = fileEvents.filter(e => e.event === ProgressEvents.FILE_STREAMING_START);
+            const fileEnds = fileEvents.filter(e => e.event === ProgressEvents.FILE_STREAMING_END);
+            const fileContents = fileEvents.filter(e => e.event === ProgressEvents.FILE_STREAMING_CONTENT);
+
+            expect(fileStarts.length).toBeGreaterThan(0);
+            expect(fileEnds.length).toBe(fileStarts.length); // Same number of starts and ends
+            expect(fileContents.length).toBeGreaterThan(0);
+
+            // Verify file events have proper structure
+            if (fileStarts.length > 0) {
+                expect(fileStarts[0].data).toHaveProperty('path');
+                expect(fileStarts[0].data).toHaveProperty('action');
+            }
+            if (fileEnds.length > 0) {
+                expect(fileEnds[0].data).toHaveProperty('path');
+                expect(fileEnds[0].data).toHaveProperty('fullContent');
+            }
 
             console.log(`✓ Streaming events verified`);
             console.log(`✓ Received ${chunks.length} chunks`);
+            console.log(`✓ File events: ${fileStarts.length} files streamed`);
             console.log('\n=== Test Complete ===\n');
         }, 180000);
     });

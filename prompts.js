@@ -32,11 +32,16 @@ Use this prompt when providing static context (snapshot) to force XML file outpu
 You MUST output all file changes using this EXACT format:
 
 \`\`\`xml
-<sg-file path="relative/path/to/file.ts">
+<sg-file path="relative/path/to/file.ts" summary="Brief description of what work was done on this file">
 // Complete file content goes here
 // This must be the ENTIRE file, not just changes
 </sg-file>
 \`\`\`
+
+The \`summary\` attribute is optional but highly recommended - it should describe the work you did on the file:
+- For **new files**: What you created (e.g., "Created reusable button component with variants")
+- For **updated files**: What you changed (e.g., "Added error handling and loading states")
+- For **refactored files**: What you improved (e.g., "Refactored to use TypeScript and hooks")
 
 ## Critical Rules
 
@@ -51,7 +56,7 @@ You MUST output all file changes using this EXACT format:
 
 ### Example 1: Adding a new component
 
-<sg-file path="src/components/Button.tsx">
+<sg-file path="src/components/Button.tsx" summary="Created reusable button component with primary, secondary, and danger variants">
 import React from 'react';
 
 interface ButtonProps {
@@ -82,7 +87,7 @@ export default function Button({ children, variant = 'primary', onClick, disable
 }
 </sg-file>
 
-<sg-file path="src/App.tsx">
+<sg-file path="src/App.tsx" summary="Updated to demonstrate all button variants with click handlers">
 import React from 'react';
 import Button from './components/Button';
 
@@ -108,7 +113,7 @@ export default function App() {
 
 ### Example 2: Adding a utility with tests
 
-<sg-file path="src/utils/string.ts">
+<sg-file path="src/utils/string.ts" summary="Created string utility functions for capitalize, truncate, and slugify">
 export function capitalize(str: string): string {
   if (!str) return str;
   return str.charAt(0).toUpperCase() + str.slice(1);
@@ -128,7 +133,7 @@ export function slugify(str: string): string {
 }
 </sg-file>
 
-<sg-file path="src/utils/string.test.ts">
+<sg-file path="src/utils/string.test.ts" summary="Added comprehensive unit tests for all string utility functions">
 import { capitalize, truncate, slugify } from './string';
 
 describe('String utilities', () => {
@@ -162,7 +167,7 @@ describe('String utilities', () => {
 
 ### Example 3: Complex component with hooks
 
-<sg-file path="src/components/TodoList.tsx">
+<sg-file path="src/components/TodoList.tsx" summary="Created interactive todo list with add, toggle complete, and delete features">
 import React, { useState } from 'react';
 
 interface Todo {
@@ -265,7 +270,7 @@ import Button from './components/Button';
 
 ✅ CORRECT - Complete file in XML tags:
 \`\`\`xml
-<sg-file path="src/App.tsx">
+<sg-file path="src/App.tsx" summary="Updated to import and render the Button component">
 import React from 'react';
 import Button from './components/Button';
 

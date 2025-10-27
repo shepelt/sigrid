@@ -627,6 +627,197 @@ const outputTarball = await workspace.export();
 await fs.writeFile('./output.tar.gz', outputTarball);
 ```
 
+#### Progress Callbacks and Streaming
+
+Static mode supports progress callbacks for tracking execution status and real-time file generation preview. This is especially useful for building interactive UIs that show live updates as files are being generated.
+
+**Progress Events:**
+
+```javascript
+import { ProgressEvents } from 'sigrid';
+
+// Workflow events
+ProgressEvents.SNAPSHOT_GENERATING  // Snapshot generation started
+ProgressEvents.SNAPSHOT_GENERATED   // Snapshot generation completed
+ProgressEvents.RESPONSE_WAITING     // Waiting for LLM response (non-streaming)
+ProgressEvents.RESPONSE_RECEIVED    // LLM response received (non-streaming)
+ProgressEvents.RESPONSE_STREAMING   // LLM response streaming started
+ProgressEvents.RESPONSE_STREAMED    // LLM response streaming completed
+ProgressEvents.FILES_WRITING        // File writing started
+ProgressEvents.FILES_WRITTEN        // File writing completed
+
+// File streaming events (streaming mode only)
+ProgressEvents.FILE_STREAMING_START   // File generation started
+ProgressEvents.FILE_STREAMING_CONTENT // File content chunk received
+ProgressEvents.FILE_STREAMING_END     // File generation completed
+```
+
+**Basic Progress Tracking:**
+
+```javascript
+const result = await workspace.execute(
+  'Create a Button component',
+  {
+    mode: 'static',
+    model: 'gpt-5',
+    progressCallback: (event, data) => {
+      console.log(`Event: ${event}`, data);
+
+      if (event === ProgressEvents.FILES_WRITTEN) {
+        console.log(`Wrote ${data.count} files`);
+      }
+    }
+  }
+);
+
+// Output:
+// Event: SNAPSHOT_GENERATING undefined
+// Event: SNAPSHOT_GENERATED undefined
+// Event: RESPONSE_WAITING undefined
+// Event: RESPONSE_RECEIVED undefined
+// Event: FILES_WRITING undefined
+// Event: FILES_WRITTEN { count: 2 }
+```
+
+**Streaming with File Preview:**
+
+Enable streaming mode to get real-time updates as files are being generated:
+
+```javascript
+const result = await workspace.execute(
+  'Create Button and Card components',
+  {
+    mode: 'static',
+    model: 'gpt-5',
+    stream: true,  // Enable streaming
+    streamCallback: (chunk) => {
+      // Raw LLM output chunks
+      process.stdout.write(chunk);
+    },
+    progressCallback: (event, data) => {
+      // File streaming events for UI
+      if (event === ProgressEvents.FILE_STREAMING_START) {
+        const summary = data.summary ? ` - ${data.summary}` : '';
+        console.log(`📄 Starting: ${data.path}${summary}`);
+        ui.createFileTab(data.path, data.summary);
+      }
+
+      if (event === ProgressEvents.FILE_STREAMING_CONTENT) {
+        console.log(`  ✍️  Writing: ${data.path}`);
+        ui.appendContent(data.path, data.content);
+      }
+
+      if (event === ProgressEvents.FILE_STREAMING_END) {
+        console.log(`✅ Completed: ${data.path}`);
+        ui.markComplete(data.path);
+      }
+    }
+  }
+);
+
+// Output:
+// Event: SNAPSHOT_GENERATING
+// Event: SNAPSHOT_GENERATED
+// Event: RESPONSE_STREAMING
+// 📄 Starting: src/components/Button.tsx
+//   ✍️  Writing: src/components/Button.tsx
+//   ✍️  Writing: src/components/Button.tsx
+//   ...
+// ✅ Completed: src/components/Button.tsx
+// 📄 Starting: src/components/Card.tsx
+//   ✍️  Writing: src/components/Card.tsx
+//   ...
+// ✅ Completed: src/components/Card.tsx
+// Event: RESPONSE_STREAMED
+// Event: FILES_WRITING
+// Event: FILES_WRITTEN { count: 2 }
+```
+
+**File Streaming Event Data:**
+
+```javascript
+// FILE_STREAMING_START
+{
+  path: 'src/components/Button.tsx',
+  action: 'write',  // or 'delete', 'append'
+  summary: 'Created reusable button component with variants'  // Optional: describes work done on file
+}
+
+// FILE_STREAMING_CONTENT
+{
+  path: 'src/components/Button.tsx',
+  content: 'import React from "react";\n\nexport default...',
+  isIncremental: true
+}
+
+// FILE_STREAMING_END
+{
+  path: 'src/components/Button.tsx',
+  action: 'write',
+  fullContent: '...'  // Complete file content
+}
+```
+
+**Important Notes:**
+
+- **File streaming is best-effort**: The incremental XML parser is optimized for UI preview and may occasionally miss content if chunks split tags in unusual ways
+- **Atomic file writing**: Files are always written atomically at the end using the robust parser, regardless of streaming preview accuracy
+- **UI only**: File streaming events are purely for real-time UI updates - the actual file operations rely on the proven final parse
+- **No impact on correctness**: Even if streaming parser fails, files are correctly written at the end
+
+**Complete Streaming Example:**
+
+```javascript
+import { createWorkspace, ProgressEvents } from 'sigrid';
+
+const workspace = await createWorkspace();
+
+// Track progress in real-time
+const fileStates = new Map();
+
+await workspace.execute(
+  'Create a todo list with multiple components',
+  {
+    mode: 'static',
+    model: 'gpt-5',
+    stream: true,
+    progressCallback: (event, data) => {
+      switch (event) {
+        case ProgressEvents.SNAPSHOT_GENERATING:
+          console.log('⏳ Generating snapshot...');
+          break;
+
+        case ProgressEvents.RESPONSE_STREAMING:
+          console.log('🤖 AI is generating code...');
+          break;
+
+        case ProgressEvents.FILE_STREAMING_START:
+          fileStates.set(data.path, { started: Date.now(), content: '' });
+          const summary = data.summary ? `\n   ${data.summary}` : '';
+          console.log(`\n📄 ${data.path}${summary}`);
+          break;
+
+        case ProgressEvents.FILE_STREAMING_CONTENT:
+          const state = fileStates.get(data.path);
+          state.content += data.content;
+          // Update UI with incremental content
+          updateEditor(data.path, state.content);
+          break;
+
+        case ProgressEvents.FILE_STREAMING_END:
+          const duration = Date.now() - fileStates.get(data.path).started;
+          console.log(`✅ ${data.path} (${duration}ms)`);
+          break;
+
+        case ProgressEvents.FILES_WRITTEN:
+          console.log(`\n🎉 Successfully wrote ${data.count} files`);
+          break;
+      }
+    }
+  }
+);
+```
+
 #### Performance Characteristics
 
 **Snapshot Generation:**

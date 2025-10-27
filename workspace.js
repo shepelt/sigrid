@@ -19,8 +19,137 @@ export const ProgressEvents = {
     RESPONSE_WAITING: 'RESPONSE_WAITING',
     RESPONSE_RECEIVED: 'RESPONSE_RECEIVED',
     FILES_WRITING: 'FILES_WRITING',
-    FILES_WRITTEN: 'FILES_WRITTEN'
+    FILES_WRITTEN: 'FILES_WRITTEN',
+    FILE_STREAMING_START: 'FILE_STREAMING_START',
+    FILE_STREAMING_CONTENT: 'FILE_STREAMING_CONTENT',
+    FILE_STREAMING_END: 'FILE_STREAMING_END'
 };
+
+/**
+ * Incremental XML parser for streaming file previews (best-effort, UI only)
+ * Parses <sg-file> tags as chunks arrive for real-time preview
+ */
+class StreamingFileParser {
+    constructor(progressCallback) {
+        this.progressCallback = progressCallback;
+        this.buffer = '';
+        this.currentFile = null;
+        this.lastContentEmitted = '';
+    }
+
+    /**
+     * Process a chunk of streamed content
+     * @param {string} chunk - New content chunk
+     */
+    processChunk(chunk) {
+        try {
+            this.buffer += chunk;
+
+            // Look for opening tags
+            while (true) {
+                if (!this.currentFile) {
+                    // Not in a file, look for <sg-file> opening
+                    const openMatch = this.buffer.match(/<sg-file\s+([^>]*)>/);
+                    if (!openMatch) break;
+
+                    // Extract attributes
+                    const attrs = this._parseAttributes(openMatch[1]);
+                    this.currentFile = {
+                        path: attrs.path || 'unknown',
+                        action: attrs.action || 'write',
+                        summary: attrs.summary || undefined,
+                        content: ''
+                    };
+
+                    // Emit start event
+                    if (this.progressCallback) {
+                        const eventData = {
+                            path: this.currentFile.path,
+                            action: this.currentFile.action
+                        };
+                        if (this.currentFile.summary) {
+                            eventData.summary = this.currentFile.summary;
+                        }
+                        this.progressCallback(ProgressEvents.FILE_STREAMING_START, eventData);
+                    }
+
+                    this.lastContentEmitted = '';
+
+                    // Remove processed part from buffer
+                    this.buffer = this.buffer.slice(openMatch.index + openMatch[0].length);
+                } else {
+                    // In a file, look for closing tag or accumulate content
+                    const closeMatch = this.buffer.match(/<\/sg-file>/);
+
+                    if (closeMatch) {
+                        // Found closing tag - emit final content
+                        const finalContent = this.buffer.slice(0, closeMatch.index);
+                        this.currentFile.content += finalContent;
+
+                        // Emit any remaining content
+                        if (finalContent.length > 0 && this.progressCallback) {
+                            this.progressCallback(ProgressEvents.FILE_STREAMING_CONTENT, {
+                                path: this.currentFile.path,
+                                content: finalContent,
+                                isIncremental: true
+                            });
+                        }
+
+                        // Emit end event with full content
+                        if (this.progressCallback) {
+                            this.progressCallback(ProgressEvents.FILE_STREAMING_END, {
+                                path: this.currentFile.path,
+                                action: this.currentFile.action,
+                                fullContent: this.currentFile.content
+                            });
+                        }
+
+                        // Reset for next file
+                        this.currentFile = null;
+                        this.lastContentEmitted = '';
+                        this.buffer = this.buffer.slice(closeMatch.index + closeMatch[0].length);
+                    } else {
+                        // No closing tag yet - emit accumulated content if substantial
+                        // Keep last 20 chars in buffer in case tag is split
+                        if (this.buffer.length > 20) {
+                            const contentToEmit = this.buffer.slice(0, -20);
+                            this.currentFile.content += contentToEmit;
+
+                            if (this.progressCallback) {
+                                this.progressCallback(ProgressEvents.FILE_STREAMING_CONTENT, {
+                                    path: this.currentFile.path,
+                                    content: contentToEmit,
+                                    isIncremental: true
+                                });
+                            }
+
+                            this.buffer = this.buffer.slice(-20);
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (error) {
+            // Best-effort parser - silently fail for UI purposes
+            // Actual file writing uses the robust parser at the end
+        }
+    }
+
+    /**
+     * Parse XML attributes from tag content
+     * @param {string} attrString - Attribute string like 'path="..." action="..."'
+     * @returns {Object} Parsed attributes
+     */
+    _parseAttributes(attrString) {
+        const attrs = {};
+        const attrRegex = /(\w+)="([^"]*)"/g;
+        let match;
+        while ((match = attrRegex.exec(attrString)) !== null) {
+            attrs[match[1]] = match[2];
+        }
+        return attrs;
+    }
+}
 
 /**
  * Workspace represents an isolated working directory for Sigrid
@@ -108,15 +237,24 @@ export class Workspace {
             if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATED);
         }
 
-        // Handle streaming mode - accumulate chunks
+        // Handle streaming mode - accumulate chunks and parse for file previews
         let accumulatedContent = '';
         let streamCallback = null;
 
         if (options.stream) {
-            // Wrap user's streamCallback to accumulate chunks
+            // Create streaming file parser for real-time previews
+            const fileParser = progressCallback ? new StreamingFileParser(progressCallback) : null;
+
+            // Wrap user's streamCallback to accumulate chunks and parse files
             const userStreamCallback = options.streamCallback;
             streamCallback = (chunk) => {
                 accumulatedContent += chunk;
+
+                // Parse chunk for file streaming events (best-effort, UI only)
+                if (fileParser) {
+                    fileParser.processChunk(chunk);
+                }
+
                 if (userStreamCallback) {
                     userStreamCallback(chunk);
                 }
