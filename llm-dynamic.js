@@ -1,11 +1,9 @@
 import os from "os";
-import OpenAI from "openai";
 import {
     fileTools,
     executeFileTool
 } from "./filetooling.js";
-
-let client = null;
+import { getClient } from "./llm-client.js";
 
 // System prompt constants
 const PURE_MODE_INSTRUCTIONS = [
@@ -25,28 +23,6 @@ const PURE_MODE_TOOLING_INSTRUCTION =
     "Do not write any files - output content directly to chat.";
 
 const DEFAULT_MODEL = "gpt-5-mini";
-
-/**
- * Initialize OpenAI client
- * @param {string} apiKey - OpenAI API key
- */
-export function initializeClient(apiKey) {
-    if (!apiKey) {
-        throw new Error('OpenAI API key is required');
-    }
-    client = new OpenAI({ apiKey });
-}
-
-/**
- * Get initialized OpenAI client
- * @returns {OpenAI} OpenAI client instance
- */
-export function getClient() {
-    if (!client) {
-        throw new Error('Client not initialized. Call initializeClient() first.');
-    }
-    return client;
-}
 
 /**
  * Extract tool calls from OpenAI response
@@ -365,6 +341,9 @@ function parseResetHeader(resetValue) {
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+// Re-export shared client functions
+export { initializeClient, getClient } from "./llm-client.js";
 
 // Re-export filetooling and persistence for convenience
 export { fileTools, setSandboxRoot, getSandboxRoot } from "./filetooling.js";

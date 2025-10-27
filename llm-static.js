@@ -1,31 +1,7 @@
-import OpenAI from "openai";
 import { randomBytes } from "crypto";
-
-let client = null;
+import { getClient } from "./llm-client.js";
 
 const DEFAULT_MODEL = "gpt-5-mini";
-
-/**
- * Initialize OpenAI client
- * @param {string} apiKey - OpenAI API key
- */
-export function initializeClient(apiKey) {
-    if (!apiKey) {
-        throw new Error('OpenAI API key is required');
-    }
-    client = new OpenAI({ apiKey });
-}
-
-/**
- * Get initialized OpenAI client
- * @returns {OpenAI} OpenAI client instance
- */
-export function getClient() {
-    if (!client) {
-        throw new Error('Client not initialized. Call initializeClient() first.');
-    }
-    return client;
-}
 
 /**
  * Generate a unique conversation ID
@@ -195,6 +171,9 @@ export async function executeStatic(prompt, opts = {}) {
         conversationID
     };
 }
+
+// Re-export shared client functions
+export { initializeClient, getClient } from "./llm-client.js";
 
 // Re-export persistence for convenience
 export {
