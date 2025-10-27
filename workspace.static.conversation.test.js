@@ -200,37 +200,17 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
         expect(fileBContent).toMatch(/import.*VALUE_A.*fileA/s);
     }, 60000);
 
-    requiresAPIKey('conversation without persistence uses provider-managed mode', async () => {
-        // This should work but use OpenAI's conversation API instead of internal tracking
-        const r1 = await workspace.execute(
+    requiresAPIKey('conversation without persistence throws error', async () => {
+        // Static mode requires conversationPersistence when conversation mode is enabled
+        await expect(workspace.execute(
             'Create src/example.js with a hello function',
             {
                 mode: 'static',
                 model: 'gpt-5-mini',
-                conversation: true  // Required for provider-managed mode
+                conversation: true  // Without persistence should error
             }
-        );
-
-        expect(r1.conversationID).toBeDefined();
-
-        // Turn 2 - should work but duplicates snapshot in provider's conversation history
-        const r2 = await workspace.execute(
-            'Add a goodbye function to example.js',
-            {
-                mode: 'static',
-                model: 'gpt-5-mini',
-                conversationID: r1.conversationID
-                // No conversationPersistence = uses provider
-            }
-        );
-
-        expect(r2.conversationID).toBe(r1.conversationID);
-
-        // Verify both functions exist
-        const content = await fs.readFile(path.join(testDir, 'src', 'example.js'), 'utf-8');
-        expect(content).toContain('hello');
-        expect(content).toContain('goodbye');
-    }, 60000);
+        )).rejects.toThrow('Static mode requires conversationPersistence');
+    });
 
     it('InMemoryPersistence - CRUD operations', async () => {
         const persistence = new InMemoryPersistence();

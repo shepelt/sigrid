@@ -454,7 +454,7 @@ export class Workspace {
      * console.log(`Wrote ${filesWritten.length} files`);
      */
     async deserializeXmlOutput(content, decodeHtmlEntities = false) {
-        const fileRegex = /<sg-file path="([^"]+)">\s*([\s\S]*?)\s*<\/sg-file>/g;
+        const fileRegex = /<sg-file[^>]*path="([^"]+)"[^>]*>\s*([\s\S]*?)\s*<\/sg-file>/g;
         const filesWritten = [];
         let match;
 

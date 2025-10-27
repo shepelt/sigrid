@@ -33,6 +33,11 @@ export async function executeStatic(prompt, opts = {}) {
     const apiClient = opts.client || getClient();
     const model = opts.model || DEFAULT_MODEL;
 
+    // Static mode only supports conversation through internal tracking with conversationPersistence
+    if (opts.conversation && !opts.conversationPersistence) {
+        throw new Error('Static mode requires conversationPersistence when conversation mode is enabled. Provide a persistence provider (e.g., InMemoryPersistence or FileSystemPersistence) or disable conversation mode.');
+    }
+
     // Use internal conversation tracking if user provides BOTH conversation: true AND a persistence provider
     const useInternalConversations = opts.conversation && opts.conversationPersistence !== undefined;
 
