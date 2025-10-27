@@ -167,6 +167,70 @@ console.log(result.content);
 console.log(result.conversationID);
 ```
 
+#### Using an LLM Gateway
+
+Sigrid can route requests through a custom LLM gateway instead of OpenAI's API directly. This is useful for:
+- Using local LLMs (Ollama, LM Studio, etc.)
+- Adding middleware for logging, caching, or rate limiting
+- Testing against custom endpoints
+- Using OpenAI-compatible APIs (Azure OpenAI, Together.ai, etc.)
+
+**Auto-detection via Environment Variables:**
+
+Set these in your `.env` file:
+```bash
+LLM_GATEWAY_URL=http://localhost:3000/v1
+LLM_GATEWAY_API_KEY=your-gateway-key  # Optional if gateway doesn't require auth
+```
+
+Then initialize normally:
+```javascript
+import sigrid from 'sigrid';
+
+// If LLM_GATEWAY_URL is set, it will be used automatically
+sigrid.initializeClient(process.env.OPENAI_API_KEY);
+
+const result = await sigrid()
+  .execute('Hello');  // Routes through gateway
+```
+
+**Explicit Gateway Configuration:**
+
+Override environment variables by providing options:
+```javascript
+// Use specific gateway (ignores environment variables)
+sigrid.initializeClient({
+  apiKey: 'your-api-key',
+  baseURL: 'http://localhost:3000/v1'
+});
+
+// Force OpenAI API even if gateway is in environment
+sigrid.initializeClient({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: 'https://api.openai.com/v1'  // Explicit baseURL prevents auto-detection
+});
+
+// Additional options
+sigrid.initializeClient({
+  apiKey: 'your-api-key',
+  baseURL: 'http://localhost:3000/v1',
+  timeout: 60000  // Custom timeout (milliseconds)
+});
+```
+
+**Backward Compatibility:**
+
+The string format is still supported:
+```javascript
+// Old format (still works)
+sigrid.initializeClient('your-api-key');
+```
+
+**Precedence:**
+1. Explicit `baseURL` in options (highest priority)
+2. `LLM_GATEWAY_URL` environment variable
+3. OpenAI default API endpoint (lowest priority)
+
 #### API Reference
 
 **Fluent Builder Methods:**
@@ -181,7 +245,9 @@ console.log(result.conversationID);
 - `.execute(prompt, opts?)` - Execute the prompt
 
 **Traditional Functions:**
-- `initializeClient(apiKey)` - Initialize OpenAI client
+- `initializeClient(apiKey | options)` - Initialize OpenAI client
+  - String: `initializeClient('api-key')`
+  - Object: `initializeClient({ apiKey, baseURL?, timeout? })`
 - `setSandboxRoot(path)` - Set default sandbox directory for file operations
 - `execute(prompt, options)` - Execute a prompt with options
 
@@ -1008,6 +1074,9 @@ npm run test:unit
 # Run integration tests (requires OPENAI_API_KEY)
 OPENAI_API_KEY=xxx npm run test:integration
 
+# Test against LLM gateway
+LLM_GATEWAY_URL=http://localhost:3000/v1 npm test -- llm-static.gateway.test.js
+
 # Run non-conversation stress tests (requires OPENAI_API_KEY)
 OPENAI_API_KEY=xxx npm test -- workspace.static.stress.test.js
 
@@ -1038,6 +1107,12 @@ npm run test:coverage
   - Multi-turn conversations
   - Snapshot regeneration with conversations
   - Provider-managed vs internal tracking
+- **Gateway Tests**: Test llm-static module against custom LLM gateway
+  - Basic connectivity and responses
+  - System instructions and context prompts
+  - Conversation persistence through gateway
+  - Streaming responses
+  - Performance metrics (latency measurement)
 - **Static Mode Stress Tests**: Test reliability, performance, edge cases
   - Large snapshots (50+ files)
   - Repeated executions (memory leak detection)
