@@ -23,6 +23,9 @@
     "test:stress": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=stress",
     "test:stress:keep": "KEEP_TEST_DIR=1 node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=stress",
     "test:static": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='(integration|stress)'",
+    "test:static:only": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern=static",
+    "test:static:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='static.*integration'",
+    "test:static:stress": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --testPathPattern='static.*stress'",
     "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch",
     "test:coverage": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --coverage"
   },

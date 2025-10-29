@@ -17,10 +17,14 @@ const __dirname = dirname(__filename);
  * - Repeated multi-turn conversations (memory leaks)
  * - Large conversation history with recall (scalability)
  * - Concurrent conversations with different persistence providers
+ *
+ * Run with OpenAI: OPENAI_API_KEY=xxx npm test
+ * Run with gateway: LLM_GATEWAY_URL=http://localhost:8000/local-llm/v1 LLM_GATEWAY_API_KEY=xxx LLM_MODEL=gpt-oss:120b npm test
  */
 describe('Static Mode Conversation Stress Tests', () => {
-    const hasApiKey = !!process.env.OPENAI_API_KEY;
+    const hasApiKey = !!process.env.OPENAI_API_KEY || !!(process.env.LLM_GATEWAY_URL && process.env.LLM_GATEWAY_API_KEY);
     const testFn = hasApiKey ? test : test.skip;
+    const model = process.env.LLM_MODEL || 'gpt-5-mini';
 
     let workspace;
     let aiRules;
@@ -29,7 +33,16 @@ describe('Static Mode Conversation Stress Tests', () => {
 
     beforeAll(async () => {
         if (hasApiKey) {
-            initializeClient(process.env.OPENAI_API_KEY);
+            const baseURL = process.env.LLM_GATEWAY_URL;
+            const apiKey = baseURL ? process.env.LLM_GATEWAY_API_KEY : process.env.OPENAI_API_KEY;
+
+            if (baseURL) {
+                console.log(`Testing with gateway: ${baseURL}, model: ${model}`);
+                initializeClient({ apiKey, baseURL });
+            } else {
+                console.log(`Testing with OpenAI, model: ${model}`);
+                initializeClient(apiKey);
+            }
 
             // Load scaffold tarball
             console.log(`Loading scaffold from: ${scaffoldPath}`);
@@ -95,7 +108,7 @@ describe('Static Mode Conversation Stress Tests', () => {
                     {
                         instructions: [aiRules],
                         mode: 'static',
-                        model: 'gpt-5-mini',
+                        model,
                         conversation: true,
                         conversationPersistence: persistence
                     }
@@ -111,7 +124,7 @@ describe('Static Mode Conversation Stress Tests', () => {
                     {
                         instructions: [aiRules],
                         mode: 'static',
-                        model: 'gpt-5-mini',
+                        model,
                         conversation: true,
                         conversationID: r1.conversationID,
                         conversationPersistence: persistence
@@ -127,7 +140,7 @@ describe('Static Mode Conversation Stress Tests', () => {
                     {
                         instructions: [aiRules],
                         mode: 'static',
-                        model: 'gpt-5-mini',
+                        model,
                         conversation: true,
                         conversationID: r1.conversationID,
                         conversationPersistence: persistence
@@ -197,7 +210,7 @@ describe('Static Mode Conversation Stress Tests', () => {
             {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true,
                 conversationPersistence: persistence
             }
@@ -214,7 +227,7 @@ describe('Static Mode Conversation Stress Tests', () => {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5-mini',
+                    model,
                     conversation: true,
                     conversationID: conversationID,
                     conversationPersistence: persistence
@@ -231,7 +244,7 @@ describe('Static Mode Conversation Stress Tests', () => {
             {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true,
                 conversationID: conversationID,
                 conversationPersistence: persistence
@@ -292,7 +305,7 @@ describe('Static Mode Conversation Stress Tests', () => {
                     {
                         instructions: [aiRules],
                         mode: 'static',
-                        model: 'gpt-5-mini',
+                        model,
                         conversation: true,
                         conversationPersistence: inMemPersistence
                     }
@@ -304,7 +317,7 @@ describe('Static Mode Conversation Stress Tests', () => {
                     {
                         instructions: [aiRules],
                         mode: 'static',
-                        model: 'gpt-5-mini',
+                        model,
                         conversation: true,
                         conversationPersistence: fsPersistence
                     }
@@ -316,7 +329,7 @@ describe('Static Mode Conversation Stress Tests', () => {
                     {
                         instructions: [aiRules],
                         mode: 'static',
-                        model: 'gpt-5-mini',
+                        model,
                         conversation: true,
                         conversationPersistence: inMemPersistence
                     }

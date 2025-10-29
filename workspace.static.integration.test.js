@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, beforeEach, afterEach } from '@jest/globals';
 import 'dotenv/config';
 import { initializeClient as initDynamic } from './llm-dynamic.js';
-import { initializeClient as initStatic } from './llm-static.js';
+import { initializeClient as initStatic, InMemoryPersistence } from './llm-static.js';
 import { createWorkspace } from './workspace.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -17,10 +17,14 @@ const __dirname = dirname(__filename);
  *
  * Tests the static context loading feature with automatic snapshot generation
  * and XML output deserialization.
+ *
+ * Run with OpenAI: OPENAI_API_KEY=xxx npm test
+ * Run with gateway: LLM_GATEWAY_URL=http://localhost:8000/local-llm/v1 LLM_GATEWAY_API_KEY=xxx LLM_MODEL=gpt-oss:120b npm test
  */
 describe('Static Mode Integration Tests', () => {
-    const hasApiKey = !!process.env.OPENAI_API_KEY;
+    const hasApiKey = !!process.env.OPENAI_API_KEY || !!(process.env.LLM_GATEWAY_URL && process.env.LLM_GATEWAY_API_KEY);
     const testFn = hasApiKey ? test : test.skip;
+    const model = process.env.LLM_MODEL || 'gpt-5';
 
     let workspace;
     let aiRules;
@@ -29,9 +33,20 @@ describe('Static Mode Integration Tests', () => {
 
     beforeAll(async () => {
         if (hasApiKey) {
-            // Initialize both clients
-            initDynamic(process.env.OPENAI_API_KEY);
-            initStatic(process.env.OPENAI_API_KEY);
+            const baseURL = process.env.LLM_GATEWAY_URL;
+            const apiKey = baseURL ? process.env.LLM_GATEWAY_API_KEY : process.env.OPENAI_API_KEY;
+
+            if (baseURL) {
+                console.log(`Testing with gateway: ${baseURL}, model: ${model}`);
+                // Initialize both clients with gateway
+                initDynamic({ apiKey, baseURL });
+                initStatic({ apiKey, baseURL });
+            } else {
+                console.log(`Testing with OpenAI, model: ${model}`);
+                // Initialize both clients
+                initDynamic(apiKey);
+                initStatic(apiKey);
+            }
 
             // Load scaffold tarball
             console.log(`Loading scaffold from: ${scaffoldPath}`);
@@ -89,7 +104,7 @@ describe('Static Mode Integration Tests', () => {
             {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5'
+                model
             }
         );
 
@@ -134,7 +149,7 @@ describe('Static Mode Integration Tests', () => {
             {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5',
+                model,
                 snapshot: {
                     include: ['src/**/*'],
                     extensions: ['.tsx', '.ts'],
@@ -182,7 +197,7 @@ describe('Static Mode Integration Tests', () => {
             {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5',
+                model,
                 snapshot: snapshot  // Pass snapshot directly
             }
         );
@@ -209,7 +224,7 @@ describe('Static Mode Integration Tests', () => {
             {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5-mini'
+                model
             }
         );
 
@@ -241,13 +256,16 @@ describe('Static Mode Integration Tests', () => {
     testFn('should work with conversation mode in static mode', async () => {
         console.log('\n=== Static Mode: Conversation Mode ===\n');
 
+        const persistence = new InMemoryPersistence();
+
         const result = await workspace.execute(
             'Create a simple card component',
             {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5',
-                conversation: true
+                model,
+                conversation: true,
+                conversationPersistence: persistence
             }
         );
 
@@ -269,7 +287,7 @@ describe('Static Mode Integration Tests', () => {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5',  // Use gpt-5 for larger context
+                    model,  // Use gpt-5 for larger context
                     stream: true,
                     streamCallback: (chunk) => {
                         chunks.push(chunk);
@@ -312,7 +330,7 @@ describe('Static Mode Integration Tests', () => {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5',  // Use gpt-5 for larger context
+                    model,  // Use gpt-5 for larger context
                     stream: true,
                     streamCallback: (chunk) => {
                         chunks.push(chunk);
@@ -364,7 +382,7 @@ describe('Static Mode Integration Tests', () => {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5',  // Use gpt-5 for larger context
+                    model,  // Use gpt-5 for larger context
                     conversation: true,
                     conversationPersistence: persistence,
                     stream: true,
@@ -389,7 +407,7 @@ describe('Static Mode Integration Tests', () => {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5',  // Use gpt-5 for larger context
+                    model,  // Use gpt-5 for larger context
                     conversation: true,
                     conversationID: result1.conversationID,
                     conversationPersistence: persistence,
@@ -431,7 +449,7 @@ describe('Static Mode Integration Tests', () => {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5',  // Use gpt-5 for larger context
+                    model,  // Use gpt-5 for larger context
                     stream: true,
                     streamCallback: (chunk) => {
                         const now = Date.now();

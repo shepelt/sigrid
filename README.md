@@ -1064,6 +1064,8 @@ const results = await Promise.all([
 
 ## Testing
 
+### Running Tests
+
 ```bash
 # Run all tests
 npm test
@@ -1074,19 +1076,16 @@ npm run test:unit
 # Run integration tests (requires OPENAI_API_KEY)
 OPENAI_API_KEY=xxx npm run test:integration
 
-# Test against LLM gateway
-LLM_GATEWAY_URL=http://localhost:3000/v1 npm test -- llm-static.gateway.test.js
+# Run all static tests (llm-static.*, workspace.static.*)
+OPENAI_API_KEY=xxx npm run test:static:only
 
-# Run non-conversation stress tests (requires OPENAI_API_KEY)
-OPENAI_API_KEY=xxx npm test -- workspace.static.stress.test.js
+# Run only static integration tests
+OPENAI_API_KEY=xxx npm run test:static:integration
 
-# Run conversation stress tests (requires OPENAI_API_KEY)
-OPENAI_API_KEY=xxx npm test -- workspace.static.conversation.stress.test.js
+# Run only static stress tests
+OPENAI_API_KEY=xxx npm run test:static:stress
 
-# Run LLM rate limit stress tests (requires OPENAI_API_KEY, will trigger 429 errors)
-OPENAI_API_KEY=xxx npm test -- llm.stress.test.js
-
-# Run all static mode tests (integration + stress)
+# Run all static mode tests (integration + stress - legacy)
 OPENAI_API_KEY=xxx npm run test:static
 
 # Keep test workspace for inspection
@@ -1097,6 +1096,86 @@ npm run test:watch
 
 # Coverage
 npm run test:coverage
+```
+
+### Testing with Local LLM Gateway
+
+All static mode tests support configurable LLM providers via environment variables. You can test against OpenAI or any local LLM gateway (Ollama, LM Studio, etc.):
+
+**Test against OpenAI:**
+```bash
+OPENAI_API_KEY=xxx npm test -- llm-static.integration.test.js
+```
+
+**Test against local LLM gateway:**
+```bash
+LLM_GATEWAY_URL="http://localhost:8000/local-llm/v1" \
+LLM_GATEWAY_API_KEY="your-gateway-key" \
+LLM_MODEL="gpt-oss:120b" \
+npm test -- llm-static.integration.test.js
+```
+
+**Test against remote gateway:**
+```bash
+LLM_GATEWAY_URL="https://your-gateway.com/v1" \
+LLM_GATEWAY_API_KEY="your-gateway-key" \
+LLM_MODEL="your-model" \
+npm test -- llm-static.integration.test.js
+```
+
+**Environment Variables:**
+- `OPENAI_API_KEY` - OpenAI API key (for OpenAI testing)
+- `LLM_GATEWAY_URL` - Custom LLM gateway URL (for local/custom LLM testing)
+- `LLM_GATEWAY_API_KEY` - Gateway API key (if required)
+- `LLM_MODEL` - Model name to use (defaults: `gpt-4o-mini` for OpenAI, `gpt-5-mini` for gateway)
+
+**Supported Test Files:**
+- `llm-static.gateway.test.js` - Basic LLM gateway connectivity tests
+- `llm-static.integration.test.js` - LLM static mode integration tests
+- `workspace.static.integration.test.js` - Workspace static mode integration tests
+- `workspace.static.callback.integration.test.js` - Progress callback tests
+- `workspace.static.conversation.test.js` - Conversation persistence tests
+- `workspace.static.stress.test.js` - Static mode stress tests
+- `workspace.static.conversation.stress.test.js` - Conversation stress tests
+
+**Examples:**
+
+```bash
+# Run all static tests against local LLM
+LLM_GATEWAY_URL="http://localhost:8000/local-llm/v1" \
+LLM_GATEWAY_API_KEY="xxx" \
+LLM_MODEL="gpt-oss:120b" \
+npm run test:static:only
+
+# Run only static integration tests against local LLM
+LLM_GATEWAY_URL="http://localhost:8000/local-llm/v1" \
+LLM_GATEWAY_API_KEY="xxx" \
+LLM_MODEL="gpt-oss:120b" \
+npm run test:static:integration
+
+# Run only static stress tests against local LLM
+LLM_GATEWAY_URL="http://localhost:8000/local-llm/v1" \
+LLM_GATEWAY_API_KEY="xxx" \
+LLM_MODEL="gpt-oss:120b" \
+npm run test:static:stress
+
+# Run specific test file
+LLM_GATEWAY_URL="http://localhost:8000/local-llm/v1" \
+LLM_GATEWAY_API_KEY="xxx" \
+LLM_MODEL="gpt-oss:120b" \
+npm test -- llm-static.gateway.test.js
+
+# Workspace integration tests with local LLM
+LLM_GATEWAY_URL="http://localhost:8000/local-llm/v1" \
+LLM_GATEWAY_API_KEY="xxx" \
+LLM_MODEL="gpt-oss:120b" \
+npm test -- workspace.static.integration.test.js
+
+# Conversation tests with local LLM
+LLM_GATEWAY_URL="http://localhost:8000/local-llm/v1" \
+LLM_GATEWAY_API_KEY="xxx" \
+LLM_MODEL="gpt-oss:120b" \
+npm test -- workspace.static.conversation.test.js
 ```
 
 ### Test Suites

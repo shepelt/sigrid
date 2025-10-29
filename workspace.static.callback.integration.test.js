@@ -17,10 +17,14 @@ const __dirname = dirname(__filename);
  *
  * Tests progress callback functionality in static mode with both
  * streaming and non-streaming modes.
+ *
+ * Run with OpenAI: OPENAI_API_KEY=xxx npm test
+ * Run with gateway: LLM_GATEWAY_URL=http://localhost:8000/local-llm/v1 LLM_GATEWAY_API_KEY=xxx LLM_MODEL=gpt-oss:120b npm test
  */
 describe('Static Mode Progress Callback Tests', () => {
-    const hasApiKey = !!process.env.OPENAI_API_KEY;
+    const hasApiKey = !!process.env.OPENAI_API_KEY || !!(process.env.LLM_GATEWAY_URL && process.env.LLM_GATEWAY_API_KEY);
     const testFn = hasApiKey ? test : test.skip;
+    const model = process.env.LLM_MODEL || 'gpt-5';
 
     let workspace;
     let aiRules;
@@ -29,9 +33,18 @@ describe('Static Mode Progress Callback Tests', () => {
 
     beforeAll(async () => {
         if (hasApiKey) {
-            // Initialize both clients
-            initDynamic(process.env.OPENAI_API_KEY);
-            initStatic(process.env.OPENAI_API_KEY);
+            const baseURL = process.env.LLM_GATEWAY_URL;
+            const apiKey = baseURL ? process.env.LLM_GATEWAY_API_KEY : process.env.OPENAI_API_KEY;
+
+            if (baseURL) {
+                console.log(`Testing with gateway: ${baseURL}, model: ${model}`);
+                initDynamic({ apiKey, baseURL });
+                initStatic({ apiKey, baseURL });
+            } else {
+                console.log(`Testing with OpenAI, model: ${model}`);
+                initDynamic(apiKey);
+                initStatic(apiKey);
+            }
 
             // Load scaffold tarball
             console.log(`Loading scaffold from: ${scaffoldPath}`);
@@ -92,7 +105,7 @@ describe('Static Mode Progress Callback Tests', () => {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5',
+                    model,
                     progressCallback: (event, data) => {
                         events.push({ event, data, timestamp: Date.now() });
                         console.log(`[${event}]${data ? ' ' + JSON.stringify(data) : ''}`);
@@ -134,7 +147,7 @@ describe('Static Mode Progress Callback Tests', () => {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5',
+                    model,
                     stream: true,
                     streamCallback: (chunk) => {
                         chunks.push(chunk);
@@ -199,7 +212,7 @@ describe('Static Mode Progress Callback Tests', () => {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5'
+                    model
                 }
             );
 

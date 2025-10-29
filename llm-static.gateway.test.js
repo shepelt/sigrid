@@ -7,10 +7,12 @@ import { executeStatic, InMemoryPersistence } from './llm-static.js';
  * Gateway tests for llm-static
  *
  * Set LLM_GATEWAY_URL in .env: LLM_GATEWAY_URL=http://localhost:3000/v1
+ * Set LLM_MODEL to configure model: LLM_MODEL=gpt-oss:120b
  */
 describe('Gateway Tests', () => {
     const gatewayUrl = process.env.LLM_GATEWAY_URL;
     const gatewayApiKey = process.env.LLM_GATEWAY_API_KEY || 'test-key';
+    const model = process.env.LLM_MODEL || 'gpt-oss:120b';
     const hasGateway = !!gatewayUrl;
     const testFn = hasGateway ? test : test.skip;
 
@@ -26,14 +28,14 @@ describe('Gateway Tests', () => {
             apiKey: gatewayApiKey,
             baseURL: gatewayUrl,
         });
-        console.log(`Testing gateway at: ${gatewayUrl}`);
+        console.log(`Testing gateway at: ${gatewayUrl}, model: ${model}`);
     }
 
     describe('Basic Connectivity', () => {
         testFn('should connect and get response', async () => {
             const result = await executeStatic('Say hello', {
                 client,
-                model: 'gpt-4o-mini'
+                model
             });
 
             console.log('Response:', result.content);
@@ -45,7 +47,7 @@ describe('Gateway Tests', () => {
             const result = await executeStatic('What is 2+2?', {
                 client,
                 instructions: 'Respond with only the number, no explanation',
-                model: 'gpt-4o-mini'
+                model
             });
 
             console.log('Math response:', result.content);
@@ -56,7 +58,7 @@ describe('Gateway Tests', () => {
             const result = await executeStatic('What fruit did I mention?', {
                 client,
                 prompts: 'My favorite fruit is apple',
-                model: 'gpt-4o-mini'
+                model
             });
 
             console.log('Context response:', result.content);
@@ -72,7 +74,7 @@ describe('Gateway Tests', () => {
                 client,
                 conversation: true,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             console.log('First message response:', result1.content);
@@ -83,7 +85,7 @@ describe('Gateway Tests', () => {
                 conversation: true,
                 conversationID: result1.conversationID,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             console.log('Recall response:', result2.content);
@@ -97,14 +99,14 @@ describe('Gateway Tests', () => {
                 client,
                 conversation: true,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             const conv2 = await executeStatic('My name is Bob', {
                 client,
                 conversation: true,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             expect(conv1.conversationID).not.toBe(conv2.conversationID);
@@ -114,7 +116,7 @@ describe('Gateway Tests', () => {
                 conversation: true,
                 conversationID: conv1.conversationID,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             const check2 = await executeStatic('What is my name?', {
@@ -122,7 +124,7 @@ describe('Gateway Tests', () => {
                 conversation: true,
                 conversationID: conv2.conversationID,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             console.log('Alice check:', check1.content);
@@ -138,7 +140,7 @@ describe('Gateway Tests', () => {
 
             const result = await executeStatic('Count from 1 to 5', {
                 client,
-                model: 'gpt-4o-mini',
+                model,
                 stream: true,
                 streamCallback: (chunk) => {
                     chunks.push(chunk);
@@ -160,7 +162,7 @@ describe('Gateway Tests', () => {
                 client,
                 conversation: true,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini',
+                model,
                 stream: true,
                 streamCallback: (chunk) => chunks.push(chunk)
             });
@@ -174,7 +176,7 @@ describe('Gateway Tests', () => {
                 conversation: true,
                 conversationID: result1.conversationID,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini',
+                model,
                 stream: true,
                 streamCallback: (chunk) => chunks.push(chunk)
             });
@@ -191,7 +193,7 @@ describe('Gateway Tests', () => {
 
             await executeStatic('Say hi', {
                 client,
-                model: 'gpt-4o-mini'
+                model
             });
 
             const latency = Date.now() - start;
@@ -205,7 +207,7 @@ describe('Gateway Tests', () => {
 
             await executeStatic('Count to 10', {
                 client,
-                model: 'gpt-4o-mini',
+                model,
                 stream: true,
                 streamCallback: () => {
                     timestamps.push(Date.now() - start);

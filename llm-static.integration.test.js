@@ -5,24 +5,37 @@ import { initializeClient, executeStatic, InMemoryPersistence } from './llm-stat
 /**
  * Integration tests for LLM Static module
  *
- * These tests require OPENAI_API_KEY environment variable.
- * Run with: OPENAI_API_KEY=xxx npm test
+ * These tests require OPENAI_API_KEY or LLM_GATEWAY_URL + LLM_GATEWAY_API_KEY.
+ *
+ * Run with OpenAI: OPENAI_API_KEY=xxx npm test
+ * Run with gateway: LLM_GATEWAY_URL=http://localhost:8000/local-llm/v1 LLM_GATEWAY_API_KEY=xxx LLM_MODEL=gpt-oss:120b npm test
  *
  * Skip if no API key: npm test (will skip automatically)
  */
 describe('LLM Static Integration Tests', () => {
-    const hasApiKey = !!process.env.OPENAI_API_KEY;
+    const hasApiKey = !!process.env.OPENAI_API_KEY || !!(process.env.LLM_GATEWAY_URL && process.env.LLM_GATEWAY_API_KEY);
     const testFn = hasApiKey ? test : test.skip;
+    const model = process.env.LLM_MODEL || 'gpt-4o-mini';
 
     beforeAll(async () => {
         if (hasApiKey) {
-            initializeClient(process.env.OPENAI_API_KEY);
+            const baseURL = process.env.LLM_GATEWAY_URL;
+            // Prefer gateway API key when gateway URL is provided
+            const apiKey = baseURL ? process.env.LLM_GATEWAY_API_KEY : process.env.OPENAI_API_KEY;
+
+            if (baseURL) {
+                console.log(`Testing with gateway: ${baseURL}, model: ${model}`);
+                initializeClient({ apiKey, baseURL });
+            } else {
+                console.log(`Testing with OpenAI, model: ${model}`);
+                initializeClient(apiKey);
+            }
         }
     });
 
     if (!hasApiKey) {
-        test('skipping integration tests - no OPENAI_API_KEY', () => {
-            console.log('ℹ️  Set OPENAI_API_KEY to run integration tests');
+        test('skipping integration tests - no API key', () => {
+            console.log('ℹ️  Set OPENAI_API_KEY or LLM_GATEWAY_URL + LLM_GATEWAY_API_KEY to run integration tests');
             expect(true).toBe(true);
         });
     }
@@ -30,7 +43,7 @@ describe('LLM Static Integration Tests', () => {
     describe('Basic Execution', () => {
         testFn('should execute simple prompt', async () => {
             const result = await executeStatic('Say "test passed" and nothing else', {
-                model: 'gpt-4o-mini'
+                model
             });
 
             expect(result).toHaveProperty('content');
@@ -42,7 +55,7 @@ describe('LLM Static Integration Tests', () => {
         testFn('should respect custom instructions', async () => {
             const result = await executeStatic('What is 2+2?', {
                 instructions: 'Respond with only the number, no explanation',
-                model: 'gpt-4o-mini'
+                model
             });
 
             expect(result.content.trim()).toMatch(/4/);
@@ -54,7 +67,7 @@ describe('LLM Static Integration Tests', () => {
                     'Be very brief',
                     'Use exactly 2 words'
                 ],
-                model: 'gpt-4o-mini'
+                model
             });
 
             const wordCount = result.content.trim().split(/\s+/).length;
@@ -64,7 +77,7 @@ describe('LLM Static Integration Tests', () => {
         testFn('should handle prompts parameter (single string)', async () => {
             const result = await executeStatic('What fruit did I mention?', {
                 prompts: 'My favorite fruit is apple',
-                model: 'gpt-4o-mini'
+                model
             });
 
             expect(result.content.toLowerCase()).toContain('apple');
@@ -76,7 +89,7 @@ describe('LLM Static Integration Tests', () => {
                     'My favorite color is blue',
                     'My favorite fruit is apple'
                 ],
-                model: 'gpt-4o-mini'
+                model
             });
 
             expect(result.content.toLowerCase()).toContain('blue');
@@ -92,7 +105,7 @@ describe('LLM Static Integration Tests', () => {
             const result1 = await executeStatic('My favorite color is blue', {
                 conversation: true,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             expect(result1.conversationID).toBeDefined();
@@ -106,7 +119,7 @@ describe('LLM Static Integration Tests', () => {
                 conversation: true,
                 conversationID: result1.conversationID,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             expect(result2.content.toLowerCase()).toContain('blue');
@@ -123,14 +136,14 @@ describe('LLM Static Integration Tests', () => {
             const result1 = await executeStatic('My name is Alice', {
                 conversation: true,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             // Conversation 2
             const result2 = await executeStatic('My name is Bob', {
                 conversation: true,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             expect(result1.conversationID).not.toBe(result2.conversationID);
@@ -140,14 +153,14 @@ describe('LLM Static Integration Tests', () => {
                 conversation: true,
                 conversationID: result1.conversationID,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             const result4 = await executeStatic('What is my name?', {
                 conversation: true,
                 conversationID: result2.conversationID,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini'
+                model
             });
 
             expect(result3.content.toLowerCase()).toContain('alice');
@@ -160,7 +173,7 @@ describe('LLM Static Integration Tests', () => {
             const chunks = [];
 
             const result = await executeStatic('Count from 1 to 5', {
-                model: 'gpt-4o-mini',
+                model,
                 stream: true,
                 streamCallback: (chunk) => {
                     chunks.push(chunk);
@@ -188,7 +201,7 @@ describe('LLM Static Integration Tests', () => {
             const result1 = await executeStatic('My favorite number is 42', {
                 conversation: true,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini',
+                model,
                 stream: true,
                 streamCallback: (chunk) => {
                     chunks.push(chunk);
@@ -216,7 +229,7 @@ describe('LLM Static Integration Tests', () => {
                 conversation: true,
                 conversationID: result1.conversationID,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini',
+                model,
                 stream: true,
                 streamCallback: (chunk) => {
                     chunks.push(chunk);
@@ -238,7 +251,7 @@ describe('LLM Static Integration Tests', () => {
 
             // Stream without persistence - no internal chunk accumulation needed
             const result = await executeStatic('Say hello', {
-                model: 'gpt-4o-mini',
+                model,
                 stream: true,
                 streamCallback: (chunk) => {
                     chunks.push(chunk);
@@ -263,7 +276,7 @@ describe('LLM Static Integration Tests', () => {
             const result = await executeStatic('My favorite food is pizza', {
                 conversation: true,
                 conversationPersistence: persistence,
-                model: 'gpt-4o-mini',
+                model,
                 stream: false
             });
 

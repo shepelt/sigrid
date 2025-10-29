@@ -7,12 +7,20 @@ import { createWorkspace, InMemoryPersistence, FileSystemPersistence, initialize
 describe('Workspace Static Mode - Multi-turn Conversations', () => {
     let workspace;
     let testDir;
-    const apiKey = process.env.OPENAI_API_KEY;
+    const hasApiKey = !!process.env.OPENAI_API_KEY || !!(process.env.LLM_GATEWAY_URL && process.env.LLM_GATEWAY_API_KEY);
+    const model = process.env.LLM_MODEL || 'gpt-5-mini';
 
     beforeEach(async () => {
         // Initialize client if API key is available
-        if (apiKey) {
-            initializeClient(apiKey);
+        if (hasApiKey) {
+            const baseURL = process.env.LLM_GATEWAY_URL;
+            const apiKey = baseURL ? process.env.LLM_GATEWAY_API_KEY : process.env.OPENAI_API_KEY;
+
+            if (baseURL) {
+                initializeClient({ apiKey, baseURL });
+            } else {
+                initializeClient(apiKey);
+            }
         }
 
 
@@ -43,7 +51,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
         }
     });
 
-    const requiresAPIKey = apiKey ? it : it.skip;
+    const requiresAPIKey = hasApiKey ? it : it.skip;
 
     requiresAPIKey('multi-turn conversation with InMemoryPersistence', async () => {
         const persistence = new InMemoryPersistence();
@@ -53,7 +61,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
             'Create a file src/utils.js with a single function "add(a, b)" that returns a + b',
             {
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true,
                 conversationPersistence: persistence
             }
@@ -72,7 +80,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
             'Add another function "subtract(a, b)" to the utils.js file',
             {
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true,
                 conversationID: r1.conversationID,
                 conversationPersistence: persistence
@@ -92,7 +100,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
             'Create a file src/test.js that imports and tests both functions from utils.js',
             {
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true,
                 conversationID: r1.conversationID,
                 conversationPersistence: persistence
@@ -120,7 +128,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
             'Create a simple React component src/Button.jsx that takes children and onClick props',
             {
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true,
                 conversationPersistence: persistence
             }
@@ -139,7 +147,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
             'Add a disabled prop to the Button component',
             {
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true,
                 conversationID: r1.conversationID,
                 conversationPersistence: persistence
@@ -174,7 +182,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
             'Create src/fileA.js with a constant: export const VALUE_A = 42;',
             {
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true,
                 conversationPersistence: persistence
             }
@@ -188,7 +196,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
             'Create src/fileB.js that imports VALUE_A from fileA.js and uses it',
             {
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true,
                 conversationID: r1.conversationID,
                 conversationPersistence: persistence
@@ -206,7 +214,7 @@ describe('Workspace Static Mode - Multi-turn Conversations', () => {
             'Create src/example.js with a hello function',
             {
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 conversation: true  // Without persistence should error
             }
         )).rejects.toThrow('Static mode requires conversationPersistence');

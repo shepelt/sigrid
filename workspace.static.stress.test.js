@@ -20,10 +20,14 @@ const __dirname = dirname(__filename);
  * - Multiple concurrent operations
  * - Edge cases and boundary conditions
  * - Performance degradation over time
+ *
+ * Run with OpenAI: OPENAI_API_KEY=xxx npm test
+ * Run with gateway: LLM_GATEWAY_URL=http://localhost:8000/local-llm/v1 LLM_GATEWAY_API_KEY=xxx LLM_MODEL=gpt-oss:120b npm test
  */
 describe('Static Mode Stress Tests', () => {
-    const hasApiKey = !!process.env.OPENAI_API_KEY;
+    const hasApiKey = !!process.env.OPENAI_API_KEY || !!(process.env.LLM_GATEWAY_URL && process.env.LLM_GATEWAY_API_KEY);
     const testFn = hasApiKey ? test : test.skip;
+    const model = process.env.LLM_MODEL || 'gpt-5-mini';
 
     let workspace;
     let aiRules;
@@ -32,7 +36,16 @@ describe('Static Mode Stress Tests', () => {
 
     beforeAll(async () => {
         if (hasApiKey) {
-            initializeClient(process.env.OPENAI_API_KEY);
+            const baseURL = process.env.LLM_GATEWAY_URL;
+            const apiKey = baseURL ? process.env.LLM_GATEWAY_API_KEY : process.env.OPENAI_API_KEY;
+
+            if (baseURL) {
+                console.log(`Testing with gateway: ${baseURL}, model: ${model}`);
+                initializeClient({ apiKey, baseURL });
+            } else {
+                console.log(`Testing with OpenAI, model: ${model}`);
+                initializeClient(apiKey);
+            }
 
             // Load scaffold tarball
             console.log(`Loading scaffold from: ${scaffoldPath}`);
@@ -127,7 +140,7 @@ export default function Component${i}() {
             {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 snapshot: snapshot
             }
         );
@@ -165,7 +178,7 @@ export default function Component${i}() {
                 {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5-mini',
+                    model,
                     snapshot: snapshot
                 }
             );
@@ -209,7 +222,7 @@ export default function Component${i}() {
             {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5',
+                model,
                 snapshot: {
                     include: ['src/**/*'],
                     extensions: ['.ts', '.tsx']
@@ -270,7 +283,7 @@ export default function Component${i}() {
                 'Add a hello world function',
                 {
                     mode: 'static',
-                    model: 'gpt-5-mini',
+                    model,
                     snapshot: snapshot
                 }
             );
@@ -309,7 +322,7 @@ export default function Component${i}() {
             const result = await workspace.execute(prompt, {
                 instructions: [aiRules],
                 mode: 'static',
-                model: 'gpt-5-mini',
+                model,
                 snapshot: snapshot // Reuse same snapshot
             });
             const duration = Date.now() - start;
@@ -544,7 +557,7 @@ export function parseXml(input: string): string {
                 const result = await workspace.execute(prompt, {
                     instructions: [aiRules],
                     mode: 'static',
-                    model: 'gpt-5-mini',
+                    model,
                     snapshot: snapshot,
                     temperature: 0.7 // Add some randomness
                 });
