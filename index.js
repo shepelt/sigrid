@@ -34,6 +34,13 @@ import {
     setSigridPersistence
 } from './persistence.js';
 
+import {
+    applyAddon,
+    generateAIRulesFromAPI,
+    getAddonInternalPaths,
+    isAddonApplied
+} from './addon.js';
+
 // Factory function that creates a new builder instance
 function sigrid() {
     return new SigridBuilder();
@@ -57,6 +64,10 @@ sigrid.InMemoryPersistence = InMemoryPersistence;
 sigrid.FileSystemPersistence = FileSystemPersistence;
 sigrid.getSigridPersistence = getSigridPersistence;
 sigrid.setSigridPersistence = setSigridPersistence;
+sigrid.applyAddon = applyAddon;
+sigrid.generateAIRulesFromAPI = generateAIRulesFromAPI;
+sigrid.getAddonInternalPaths = getAddonInternalPaths;
+sigrid.isAddonApplied = isAddonApplied;
 
 // Default export: factory function with attached methods
 export default sigrid;
@@ -79,5 +90,9 @@ export {
     InMemoryPersistence,
     FileSystemPersistence,
     getSigridPersistence,
-    setSigridPersistence
+    setSigridPersistence,
+    applyAddon,
+    generateAIRulesFromAPI,
+    getAddonInternalPaths,
+    isAddonApplied
 };

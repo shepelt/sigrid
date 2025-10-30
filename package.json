@@ -9,7 +9,8 @@
   "exports": {
     ".": "./index.js",
     "./llm": "./llm.js",
-    "./filetooling": "./filetooling.js"
+    "./filetooling": "./filetooling.js",
+    "./addons/sqlite.js": "./test-fixtures/addons/sqlite.js"
   },
   "bin": {
     "sigrid": "bin/sigrid.js"
