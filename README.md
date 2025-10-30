@@ -996,6 +996,438 @@ export default function App() {
 
 Files are automatically deserialized and written to the workspace.
 
+### Addon System
+
+The addon system provides a modular way to add functionality to workspaces. Addons can include files, dependencies, API documentation, and context optimization - making it easy to give LLMs access to pre-built features like databases, authentication, or UI components.
+
+#### What are Addons?
+
+Addons are JavaScript objects that bundle:
+- **Files**: Implementation code, documentation, examples
+- **Dependencies**: npm packages to install
+- **API Definition**: Structured interface for LLMs (auto-generates AI rules)
+- **Internal Files**: Implementation details hidden from LLM context (context optimization)
+
+**Key Benefits:**
+- ✅ **Context Optimization**: Hide implementation (~300 lines), show only API docs (~50 lines)
+- ✅ **Auto-generated Documentation**: Structured API definitions become LLM instructions
+- ✅ **Validation**: Automatic verification that exports exist in files (<1ms overhead)
+- ✅ **Reusable**: Share addons across projects
+- ✅ **Type-safe**: Structured API format prevents errors
+
+#### Quick Start
+
+```javascript
+import { createWorkspace, applyAddon } from 'sigrid';
+import sqliteAddon from './addons/sqlite.js';
+
+// Create workspace and apply addon
+const workspace = await createWorkspace();
+await applyAddon(workspace, sqliteAddon);
+
+// LLM can now use the database API
+const result = await workspace.execute(
+  'Create a todo app with persistent storage',
+  {
+    mode: 'static',
+    model: 'gpt-5',
+    instructions: [await workspace.getAIRules()]
+  }
+);
+
+console.log(`Generated ${result.filesWritten.length} files`);
+```
+
+#### Built-in Addons
+
+**SQLite Addon** - Browser-based database using sql.js + IndexedDB:
+
+```javascript
+import sqliteAddon from 'sigrid/addons/sqlite.js';
+
+await applyAddon(workspace, sqliteAddon);
+
+// LLM will automatically:
+// - Import: import { createDatabase } from '@/lib/database'
+// - Use: await db.query('SELECT * FROM todos')
+// - Follow patterns from docs/database-api.md
+```
+
+The SQLite addon provides:
+- Database abstraction layer (hides sql.js complexity)
+- IndexedDB persistence (data survives page refresh)
+- Transaction support for atomic operations
+- Comprehensive API documentation for LLMs
+- ~280 lines hidden from context (only ~50 lines of API docs shown)
+
+#### Creating Custom Addons
+
+Addons are just JavaScript objects. You can define them inline, load from files, or generate programmatically.
+
+**Simple Inline Addon:**
+
+```javascript
+const configAddon = {
+  name: 'api-config',
+  files: {
+    'src/lib/config.ts': `
+      export const API_URL = "https://api.example.com";
+      export const API_TIMEOUT = 30000;
+    `
+  }
+};
+
+await applyAddon(workspace, configAddon);
+```
+
+**Addon with Structured API:**
+
+```javascript
+const authAddon = {
+  name: 'authentication',
+  description: 'User authentication with JWT',
+
+  // Structured API definition (auto-generates AI rules)
+  api: {
+    '@/lib/auth': {
+      exports: {
+        'login': 'Authenticate user with email and password',
+        'logout': 'Log out current user',
+        'getUser': 'Get current user info'
+      },
+      methods: {
+        'login(email, password)': 'Returns JWT token and user data',
+        'logout()': 'Clears session and redirects to login',
+        'getUser()': 'Returns current user or null'
+      }
+    }
+  },
+
+  docs: 'docs/auth-api.md',
+  technology: 'JWT with secure httpOnly cookies',
+  useCases: 'Login, signup, protected routes, user sessions',
+
+  dependencies: {
+    'jsonwebtoken': '^9.0.0',
+    'bcryptjs': '^2.4.3'
+  },
+
+  files: {
+    'src/lib/auth.ts': `...implementation...`,
+    'docs/auth-api.md': `...documentation...`
+  },
+
+  // Hide implementation from LLM context
+  internal: ['src/lib/auth.ts']
+};
+
+await applyAddon(workspace, authAddon);
+```
+
+**Programmatic Addon Generation:**
+
+```javascript
+function createServerAddon(apiUrl, features = []) {
+  const files = {};
+  const api = {};
+
+  // Base API config
+  files['src/lib/api.ts'] = `export const API_URL = "${apiUrl}";`;
+
+  // Add features dynamically
+  if (features.includes('auth')) {
+    files['src/lib/auth.ts'] = `...auth code...`;
+    api['@/lib/auth'] = {
+      exports: {
+        'login': 'Authenticate user',
+        'logout': 'Log out user'
+      }
+    };
+  }
+
+  if (features.includes('database')) {
+    files['src/lib/db.ts'] = `...database code...`;
+    api['@/lib/db'] = {
+      exports: {
+        'query': 'Execute database query'
+      }
+    };
+  }
+
+  return {
+    name: 'server-addon',
+    description: `Connect to server API at ${apiUrl}`,
+    api,
+    files
+  };
+}
+
+// Generate and apply
+const addon = createServerAddon('https://api.myapp.com', ['auth', 'database']);
+await applyAddon(workspace, addon);
+```
+
+#### Addon Structure
+
+```javascript
+{
+  // Required
+  name: string,              // Addon identifier
+  files: {                   // Files to write to workspace
+    'path/to/file.js': 'content...'
+  },
+
+  // Optional - Structured API (recommended)
+  api: {
+    '@/lib/module': {        // Import path
+      exports: {             // Named exports
+        'funcName': 'Description for LLM'
+      },
+      methods: {             // Method signatures and descriptions
+        'funcName(arg1, arg2)': 'What it returns'
+      }
+    }
+  },
+
+  // Optional - Manual AI rules (overrides auto-generated)
+  aiRulesAddition: string,   // Text to append to AI_RULES.md
+
+  // Optional - Additional metadata
+  version: string,           // Version number
+  description: string,       // Human-readable description
+  docs: string,              // Path to main documentation file
+  technology: string,        // Technology used (e.g., "sql.js with IndexedDB")
+  useCases: string,          // Use cases description
+
+  // Optional - Context optimization
+  internal: string[],        // Paths to exclude from LLM snapshots
+
+  // Optional - Dependencies
+  dependencies: {            // npm packages to add to package.json
+    'package-name': '^1.0.0'
+  }
+}
+```
+
+#### How It Works
+
+**1. Apply Addon:**
+```javascript
+const result = await applyAddon(workspace, addon);
+```
+
+**2. Automatic Processing:**
+- Writes all files to workspace
+- Updates package.json with dependencies
+- Registers internal paths for snapshot exclusion
+- Auto-generates AI rules from `api` field (or uses manual `aiRulesAddition`)
+- Validates that API exports exist in files
+
+**3. LLM Access:**
+```javascript
+// Get AI rules (includes addon documentation)
+const aiRules = await workspace.getAIRules();
+
+// LLM now knows about addon API
+const result = await workspace.execute(
+  'Build a feature using the addon',
+  {
+    mode: 'static',
+    model: 'gpt-5',
+    instructions: [aiRules]
+  }
+);
+```
+
+#### API Validation
+
+Addons are automatically validated when applied (<1ms overhead):
+
+```javascript
+// This will throw an error if 'myFunc' doesn't exist in the file
+const addon = {
+  name: 'invalid',
+  api: {
+    '@/lib/example': {
+      exports: {
+        'myFunc': 'A function that does not exist'
+      }
+    }
+  },
+  files: {
+    'src/lib/example.js': 'export function wrongName() {}'
+  }
+};
+
+await applyAddon(workspace, addon);
+// Error: Addon API validation failed:
+//   - API defines export "myFunc" but it does not exist in src/lib/example.js
+```
+
+Validation checks:
+- Import paths map to actual files
+- Exported functions exist in files
+- Supports various export patterns (function, const, async)
+
+#### Context Optimization
+
+Use the `internal` array to hide implementation files from LLM snapshots while keeping API docs visible:
+
+```javascript
+{
+  files: {
+    'docs/api.md': '...API documentation...',      // Visible to LLM
+    'src/lib/implementation.js': '...500 lines...', // Hidden from LLM
+  },
+  internal: ['src/lib/implementation.js']
+}
+```
+
+**Benefits:**
+- Saves context tokens (~280 lines for SQLite addon)
+- LLM sees clean API docs instead of implementation details
+- Generated code still works (implementation bundled at build time)
+
+#### Testing Addons
+
+Sigrid includes comprehensive addon tests:
+
+**Unit Tests** (addon.test.js):
+```bash
+npm test -- addon.test.js
+```
+Tests API validation, rules generation, and addon application.
+
+**Integration Tests** (addon.integration.test.js):
+```bash
+# Test with OpenAI
+OPENAI_API_KEY=xxx npm test -- addon.integration.test.js
+
+# Test with LLM Gateway
+LLM_GATEWAY_URL="http://localhost:8000/v1" \
+LLM_GATEWAY_API_KEY="xxx" \
+LLM_MODEL="gpt-oss:120b" \
+npm test -- addon.integration.test.js
+```
+Tests full workflow including LLM usage:
+- Addon files copied correctly
+- Internal files excluded from snapshots
+- LLM uses addon API (not reimplemented)
+- LLM follows documentation patterns
+- Multiple database scenarios work
+
+**Stress Tests** (addon.stress.test.js):
+```bash
+npm test -- addon.stress.test.js
+```
+Tests edge cases: Unicode, deep nesting, many modules, etc.
+
+#### Example: SQLite Addon
+
+The SQLite addon demonstrates best practices:
+
+```javascript
+{
+  name: 'sqlite',
+  description: 'This project includes a SQLite database that runs in the browser',
+
+  dependencies: {
+    'sql.js': '^1.10.3'
+  },
+
+  // Structured API definition
+  api: {
+    '@/lib/database': {
+      exports: {
+        'createDatabase': 'Creates a new SQLite database instance with IndexedDB persistence'
+      },
+      methods: {
+        'query(sql, params)': 'Execute SELECT queries and return results',
+        'execute(sql, params)': 'Execute INSERT/UPDATE/DELETE statements',
+        'transaction(statements)': 'Run multiple statements atomically',
+        'close()': 'Close the database connection'
+      }
+    }
+  },
+
+  docs: 'docs/database-api.md',
+  technology: 'sql.js (SQLite compiled to WebAssembly) with IndexedDB persistence',
+  useCases: 'Perfect for todo apps, notes, forms, offline-first apps, and local data storage',
+
+  files: {
+    'docs/database-api.md': databaseApiMd,      // ~50 lines - shown to LLM
+    'src/lib/database.js': databaseJs,          // ~80 lines - hidden
+    'src/lib/client-database.js': clientDatabaseJs  // ~250 lines - hidden
+  },
+
+  internal: [
+    'src/lib/database.js',
+    'src/lib/client-database.js'
+  ]
+}
+```
+
+**Usage:**
+```javascript
+import { createWorkspace, applyAddon } from 'sigrid';
+import sqliteAddon from 'sigrid/addons/sqlite.js';
+
+const workspace = await createWorkspace(tarballBuffer);
+await applyAddon(workspace, sqliteAddon);
+
+const result = await workspace.execute(
+  'Create a todo list app with database storage',
+  {
+    mode: 'static',
+    model: 'gpt-5',
+    instructions: [await workspace.getAIRules()]
+  }
+);
+
+// LLM generates code like:
+// import { createDatabase } from '@/lib/database';
+// const db = await createDatabase();
+// await db.execute('CREATE TABLE todos (...)');
+```
+
+#### Best Practices
+
+**1. Use Structured API Definitions:**
+```javascript
+// Good: Auto-generated, validated, type-safe
+api: {
+  '@/lib/module': {
+    exports: { 'funcName': 'Description' }
+  }
+}
+
+// Avoid: Manual text, error-prone
+aiRulesAddition: "Import funcName from @/lib/module..."
+```
+
+**2. Hide Implementation Details:**
+```javascript
+internal: ['src/lib/implementation.js']  // Saves context tokens
+```
+
+**3. Provide Documentation:**
+```javascript
+files: {
+  'docs/api.md': '...comprehensive examples...'
+}
+```
+
+**4. Use Context Optimization:**
+- Keep docs concise (~50 lines)
+- Hide implementation (~300+ lines)
+- Net savings: ~250 lines per addon
+
+**5. Validate During Development:**
+```javascript
+// Validation runs automatically - fix errors immediately
+await applyAddon(workspace, addon);
+```
+
 ## Examples
 
 ### Code Generation

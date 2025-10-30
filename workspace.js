@@ -615,6 +615,29 @@ export class Workspace {
     }
 
     /**
+     * Get AI_RULES.md content from workspace (if it exists)
+     * Useful for passing addon instructions to execute()
+     * @returns {Promise<string>} AI rules content, or empty string if file doesn't exist
+     * @example
+     * const aiRules = await workspace.getAIRules();
+     * await workspace.execute(prompt, {
+     *   instructions: [aiRules],
+     *   mode: 'static'
+     * });
+     */
+    async getAIRules() {
+        const aiRulesPath = path.join(this.path, 'AI_RULES.md');
+        try {
+            return await fs.readFile(aiRulesPath, 'utf-8');
+        } catch (error) {
+            if (error.code === 'ENOENT') {
+                return ''; // File doesn't exist, return empty string
+            }
+            throw error; // Other errors should be thrown
+        }
+    }
+
+    /**
      * Delete workspace directory
      * @returns {Promise<void>}
      */

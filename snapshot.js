@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { glob } from 'glob';
 import ignore from 'ignore';
+import { getAddonInternalPaths } from './addon.js';
 
 /**
  * Default file extensions to include
@@ -78,8 +79,12 @@ export async function collectFiles(workspaceDir, options = {}) {
     // Convert include patterns to absolute patterns
     const includePatterns = Array.isArray(include) ? include : [include];
 
+    // Merge default excludes with addon internal paths
+    const addonInternalPaths = getAddonInternalPaths();
+    const allExcludes = [...exclude, ...addonInternalPaths];
+
     // Build glob ignore patterns
-    const ignorePatterns = exclude.map(pattern => {
+    const ignorePatterns = allExcludes.map(pattern => {
         // If it's just a directory name, match it anywhere
         if (!pattern.includes('/') && !pattern.includes('*')) {
             return `**/${pattern}/**`;
