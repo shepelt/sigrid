@@ -403,7 +403,7 @@ export default function Card() {
         const staticResult = await workspace.execute(prompt, {
             instructions: [aiRules],
             mode: 'static',
-            model: 'gpt-5-mini',
+            model,
             snapshot: snapshot
         });
         const staticTime = Date.now() - startStatic;
