@@ -23,6 +23,7 @@ const DEFAULT_EXTENSIONS = [
 const DEFAULT_EXCLUDES = [
     'node_modules',
     '.git',
+    '.sigrid',      // Sigrid workspace metadata (like .git)
     'dist',
     'build',
     '.next',
@@ -80,7 +81,7 @@ export async function collectFiles(workspaceDir, options = {}) {
     const includePatterns = Array.isArray(include) ? include : [include];
 
     // Merge default excludes with addon internal paths
-    const addonInternalPaths = getAddonInternalPaths();
+    const addonInternalPaths = await getAddonInternalPaths(workspaceDir);
     const allExcludes = [...exclude, ...addonInternalPaths];
 
     // Build glob ignore patterns

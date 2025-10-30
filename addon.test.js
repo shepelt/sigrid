@@ -235,5 +235,80 @@ describe('Addon Unit Tests', () => {
             expect(aiRules).toContain('Manually written rules');
             expect(aiRules).not.toContain('autoFunc'); // Should not have auto-generated content
         });
+
+        test('should be idempotent - applying same addon twice is safe', async () => {
+            workspace = await createWorkspace();
+
+            const addon = {
+                name: 'idempotent-test',
+                version: '1.0.0',
+                files: {
+                    'src/lib/test.js': 'export function test() { return 42; }'
+                }
+            };
+
+            // Apply first time
+            const result1 = await applyAddon(workspace, addon);
+            expect(result1.filesAdded).toHaveLength(1);
+            expect(result1.alreadyApplied).toBeUndefined();
+
+            // Apply second time - should be idempotent
+            const result2 = await applyAddon(workspace, addon);
+            expect(result2.alreadyApplied).toBe(true);
+            expect(result2.appliedAt).toBeDefined();
+            expect(result2.filesAdded).toBeUndefined();
+        });
+
+        test('should store internal paths per workspace in .sigrid/addons.json', async () => {
+            workspace = await createWorkspace();
+
+            const addon = {
+                name: 'internal-test',
+                version: '1.0.0',
+                files: {
+                    'src/lib/public.js': 'export function api() {}',
+                    'src/lib/internal.js': 'function impl() {}'
+                },
+                internal: ['src/lib/internal.js']
+            };
+
+            await applyAddon(workspace, addon);
+
+            // Read .sigrid/addons.json directly
+            const fs = await import('node:fs/promises');
+            const path = await import('node:path');
+            const addonsFile = path.join(workspace.path, '.sigrid', 'addons.json');
+            const content = await fs.readFile(addonsFile, 'utf-8');
+            const registry = JSON.parse(content);
+
+            expect(registry.applied['internal-test@1.0.0']).toBeDefined();
+            expect(registry.applied['internal-test@1.0.0'].internalPaths).toEqual(['src/lib/internal.js']);
+        });
+    });
+
+    describe('Workspace initialization', () => {
+        test('should create .sigrid directory on workspace creation', async () => {
+            workspace = await createWorkspace();
+
+            const fs = await import('node:fs/promises');
+            const path = await import('node:path');
+
+            // Check .sigrid directory exists
+            const sigridDir = path.join(workspace.path, '.sigrid');
+            const stats = await fs.stat(sigridDir);
+            expect(stats.isDirectory()).toBe(true);
+
+            // Check metadata.json exists
+            const metadataFile = path.join(sigridDir, 'metadata.json');
+            const metadata = JSON.parse(await fs.readFile(metadataFile, 'utf-8'));
+            expect(metadata.workspaceId).toBe(workspace.id);
+            expect(metadata.createdAt).toBeDefined();
+            expect(metadata.sigridVersion).toBe('1.0.0');
+
+            // Check addons.json exists and is empty
+            const addonsFile = path.join(sigridDir, 'addons.json');
+            const addons = JSON.parse(await fs.readFile(addonsFile, 'utf-8'));
+            expect(addons.applied).toEqual({});
+        });
     });
 });

@@ -28,10 +28,52 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 /**
- * Registry of paths that should be excluded from snapshots
- * Populated when addons are applied to workspaces
+ * Get the path to the addons.json file for a workspace
+ * @param {string} workspacePath - Workspace directory path
+ * @returns {string} Path to addons.json
  */
-const internalPaths = new Set();
+function getAddonsFile(workspacePath) {
+    return path.join(workspacePath, '.sigrid', 'addons.json');
+}
+
+/**
+ * Generate unique identifier for an addon
+ * @param {Object} addon - Addon object
+ * @returns {string} Unique identifier (name@version)
+ */
+function getAddonId(addon) {
+    const version = addon.version || '1.0.0';
+    return `${addon.name}@${version}`;
+}
+
+/**
+ * Read addons registry from workspace filesystem
+ * @param {string} workspacePath - Workspace directory path
+ * @returns {Promise<Object>} Addons registry
+ */
+async function readAddonsRegistry(workspacePath) {
+    const filePath = getAddonsFile(workspacePath);
+    try {
+        const content = await fs.readFile(filePath, 'utf-8');
+        return JSON.parse(content);
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            return { applied: {} }; // File doesn't exist yet
+        }
+        throw error;
+    }
+}
+
+/**
+ * Write addons registry to workspace filesystem
+ * @param {string} workspacePath - Workspace directory path
+ * @param {Object} registry - Addons registry
+ */
+async function writeAddonsRegistry(workspacePath, registry) {
+    const filePath = getAddonsFile(workspacePath);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(registry, null, 2), 'utf-8');
+}
 
 /**
  * Generate AI rules addition text from addon's API definition
@@ -193,11 +235,22 @@ function validateAddonAPI(addon) {
 }
 
 /**
- * Get list of paths that should be excluded from snapshots
- * @returns {Array<string>} Array of paths to exclude
+ * Get list of paths that should be excluded from snapshots for a workspace
+ * @param {string} workspacePath - Workspace directory path
+ * @returns {Promise<Array<string>>} Array of paths to exclude
  */
-export function getAddonInternalPaths() {
-    return Array.from(internalPaths);
+export async function getAddonInternalPaths(workspacePath) {
+    const registry = await readAddonsRegistry(workspacePath);
+    const allInternalPaths = [];
+
+    // Collect internal paths from all applied addons
+    for (const addonData of Object.values(registry.applied)) {
+        if (addonData.internalPaths) {
+            allInternalPaths.push(...addonData.internalPaths);
+        }
+    }
+
+    return allInternalPaths;
 }
 
 /**
@@ -244,6 +297,20 @@ export async function applyAddon(workspace, addon, options = {}) {
         throw new Error('Addon must have a files object');
     }
 
+    // Generate unique ID for this addon
+    const addonId = getAddonId(addon);
+
+    // Check if addon is already applied (idempotent)
+    const registry = await readAddonsRegistry(workspace.path);
+    if (registry.applied[addonId]) {
+        return {
+            addon: addon.name,
+            version: addon.version || '1.0.0',
+            alreadyApplied: true,
+            appliedAt: registry.applied[addonId].appliedAt
+        };
+    }
+
     const result = {
         addon: addon.name,
         version: addon.version || '1.0.0',
@@ -269,12 +336,14 @@ export async function applyAddon(workspace, addon, options = {}) {
         result.filesAdded.push(filePath);
     }
 
-    // 2. Register internal paths for exclusion from snapshots
-    if (addon.internal && Array.isArray(addon.internal)) {
-        for (const internalPath of addon.internal) {
-            internalPaths.add(internalPath);
-        }
-    }
+    // 2. Register addon in workspace registry
+    registry.applied[addonId] = {
+        name: addon.name,
+        version: addon.version || '1.0.0',
+        appliedAt: new Date().toISOString(),
+        internalPaths: addon.internal || []
+    };
+    await writeAddonsRegistry(workspace.path, registry);
 
     // 3. Update package.json with dependencies
     if (addon.dependencies && Object.keys(addon.dependencies).length > 0) {

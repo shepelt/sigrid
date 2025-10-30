@@ -638,6 +638,37 @@ export class Workspace {
     }
 
     /**
+     * Initialize .sigrid directory with metadata
+     * @param {Object} info - Workspace initialization info
+     * @returns {Promise<void>}
+     */
+    async initializeSigridMetadata(info = {}) {
+        const sigridDir = path.join(this.path, '.sigrid');
+        await fs.mkdir(sigridDir, { recursive: true });
+
+        // Write metadata.json
+        const metadata = {
+            workspaceId: info.workspaceId || this.id,
+            createdAt: new Date().toISOString(),
+            sigridVersion: '1.0.0',
+            baseDir: info.baseDir || null
+        };
+        await fs.writeFile(
+            path.join(sigridDir, 'metadata.json'),
+            JSON.stringify(metadata, null, 2),
+            'utf-8'
+        );
+
+        // Initialize empty addons.json
+        const addons = { applied: {} };
+        await fs.writeFile(
+            path.join(sigridDir, 'addons.json'),
+            JSON.stringify(addons, null, 2),
+            'utf-8'
+        );
+    }
+
+    /**
      * Delete workspace directory
      * @returns {Promise<void>}
      */
@@ -683,6 +714,17 @@ export async function openWorkspace(workspacePath) {
     const workspace = new Workspace(path.resolve(workspacePath));
     // Mark as populated since we're opening an existing workspace
     workspace._populated = true;
+
+    // Initialize .sigrid if it doesn't exist (backward compatibility)
+    const sigridDir = path.join(workspace.path, '.sigrid');
+    try {
+        await fs.access(sigridDir);
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            // .sigrid doesn't exist, initialize it
+            await workspace.initializeSigridMetadata();
+        }
+    }
     return workspace;
 }
 
@@ -714,6 +756,9 @@ export async function createWorkspace(tarGzBufferOrOptions, options = {}) {
         await fs.mkdir(workspaceDir, { recursive: true });
 
         const workspace = new Workspace(workspaceDir);
+
+        // Initialize .sigrid directory with metadata
+        await workspace.initializeSigridMetadata({ baseDir, workspaceId });
 
         // If tarGzBuffer provided, populate immediately (backward compatible)
         if (tarGzBufferOrOptions && Buffer.isBuffer(tarGzBufferOrOptions)) {
