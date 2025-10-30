@@ -171,6 +171,20 @@ export function generateAIRulesFromAPI(addon) {
         }
     }
 
+    // Add conventions from API definition
+    const allConventions = [];
+    for (const importPath of apiPaths) {
+        const apiDef = addon.api[importPath];
+        if (apiDef.conventions && Array.isArray(apiDef.conventions)) {
+            allConventions.push(...apiDef.conventions);
+        }
+    }
+
+    if (allConventions.length > 0) {
+        content += '\n\n**Conventions**:\n\n';
+        content += allConventions.map(c => `- ${c}`).join('\n');
+    }
+
     content += '\n';
 
     return content;

@@ -152,6 +152,57 @@ describe('Addon Unit Tests', () => {
             expect(rules).toBe('');
         });
 
+        test('should include conventions from API definition', () => {
+            const addon = {
+                name: 'database',
+                description: 'A database addon',
+                api: {
+                    '@/lib/db': {
+                        exports: {
+                            'query': 'Query function'
+                        },
+                        conventions: [
+                            'Always use parameterized queries to prevent SQL injection',
+                            'Close connections when done',
+                            'Use transactions for multiple related operations'
+                        ]
+                    }
+                }
+            };
+
+            const rules = generateAIRulesFromAPI(addon);
+
+            expect(rules).toContain('**Conventions**:');
+            expect(rules).toContain('Always use parameterized queries to prevent SQL injection');
+            expect(rules).toContain('Close connections when done');
+            expect(rules).toContain('Use transactions for multiple related operations');
+        });
+
+        test('should handle conventions from multiple import paths', () => {
+            const addon = {
+                name: 'multi',
+                description: 'Multiple APIs with conventions',
+                api: {
+                    '@/lib/auth': {
+                        exports: { 'login': 'Login function' },
+                        conventions: ['Always validate user input', 'Use secure tokens']
+                    },
+                    '@/lib/db': {
+                        exports: { 'query': 'Query function' },
+                        conventions: ['Use parameterized queries', 'Handle errors properly']
+                    }
+                }
+            };
+
+            const rules = generateAIRulesFromAPI(addon);
+
+            expect(rules).toContain('**Conventions**:');
+            expect(rules).toContain('Always validate user input');
+            expect(rules).toContain('Use secure tokens');
+            expect(rules).toContain('Use parameterized queries');
+            expect(rules).toContain('Handle errors properly');
+        });
+
         test('should handle multiple import paths', () => {
             const addon = {
                 name: 'multi',
