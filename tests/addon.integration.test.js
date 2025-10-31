@@ -31,7 +31,7 @@ describe('Addon System Tests', () => {
 
     let workspace;
     let tarballBuffer;
-    const scaffoldPath = path.join(__dirname, 'test-fixtures', 'react-scaffold.tar.gz');
+    const scaffoldPath = path.join(__dirname, '..', 'test-fixtures', 'react-scaffold.tar.gz');
 
     beforeAll(async () => {
         if (hasApiKey) {

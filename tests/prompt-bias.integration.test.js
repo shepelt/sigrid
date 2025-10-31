@@ -36,7 +36,7 @@ describe('Prompt Bias - Minimal File Regeneration', () => {
     let tarballBuffer;
     const hasApiKey = !!process.env.OPENAI_API_KEY || !!(process.env.LLM_GATEWAY_URL && process.env.LLM_GATEWAY_API_KEY);
     const model = process.env.LLM_MODEL || 'gpt-5-mini';
-    const scaffoldPath = path.join(__dirname, 'test-fixtures', 'react-scaffold.tar.gz');
+    const scaffoldPath = path.join(__dirname, '..', 'test-fixtures', 'react-scaffold.tar.gz');
 
     /**
      * Load AI_RULES.md from workspace (mimics production pattern)

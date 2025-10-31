@@ -29,7 +29,7 @@ describe('Static Mode Conversation Stress Tests', () => {
     let workspace;
     let aiRules;
     let tarballBuffer;
-    const scaffoldPath = path.join(__dirname, 'test-fixtures', 'react-scaffold.tar.gz');
+    const scaffoldPath = path.join(__dirname, '..', 'test-fixtures', 'react-scaffold.tar.gz');
 
     beforeAll(async () => {
         if (hasApiKey) {
