@@ -28,11 +28,25 @@ function generateConversationID() {
  * @param {boolean} opts.stream - Enable streaming output (default: false)
  * @param {Function} opts.streamCallback - Callback for streaming chunks: (chunk: string) => void
  * @param {Object} opts.responseFormat - Response format for structured outputs (e.g., { type: "json_object" } or { type: "json_schema", json_schema: {...} })
+ * @param {boolean} opts.retry - Enable retry on rate limit errors (default: true)
+ * @param {number} opts.maxRetries - Maximum number of retry attempts (default: 2)
+ * @param {number} opts.retryBaseDelay - Base delay in seconds for exponential backoff (default: 5)
+ * @param {number} opts.retryMaxDelay - Maximum delay in seconds (default: 60)
+ * @param {Function} opts.onRetry - Callback for retry attempts: (info: {attempt, delay, error, remainingTokens, resetTime}) => void
  * @returns {Promise<{content: string, conversationID: string}>} - content is empty string if streaming enabled
  */
 export async function executeStatic(prompt, opts = {}) {
     const apiClient = opts.client || getClient();
     const model = opts.model || DEFAULT_MODEL;
+
+    // Build retry config
+    const retryConfig = {
+        enabled: opts.retry ?? true,
+        maxRetries: opts.maxRetries ?? 2,
+        baseDelay: opts.retryBaseDelay ?? 5,
+        maxDelay: opts.retryMaxDelay ?? 60,
+        onRetry: opts.onRetry
+    };
 
     // Static mode only supports conversation through internal tracking with conversationPersistence
     if (opts.conversation && !opts.conversationPersistence) {
@@ -112,7 +126,7 @@ export async function executeStatic(prompt, opts = {}) {
             requestParams.response_format = opts.responseFormat;
         }
 
-        const response = await apiClient.chat.completions.create(requestParams);
+        const response = await callWithRetry(apiClient, requestParams, retryConfig);
 
         const content = response.choices[0]?.message?.content || "";
 
@@ -149,7 +163,7 @@ export async function executeStatic(prompt, opts = {}) {
         streamParams.response_format = opts.responseFormat;
     }
 
-    const stream = await apiClient.chat.completions.create(streamParams);
+    const stream = await callWithRetry(apiClient, streamParams, retryConfig);
 
     // Only accumulate chunks if persistence is enabled
     let fullContent = useInternalConversations ? "" : null;
@@ -190,6 +204,99 @@ export async function executeStatic(prompt, opts = {}) {
         content: "",
         conversationID
     };
+}
+
+/**
+ * Retry wrapper for OpenAI API calls with smart 429 handling
+ *
+ * Strategy:
+ * 1. Try to parse x-ratelimit-reset-tokens header (e.g., "3m0.088s")
+ * 2. Fall back to exponential backoff with jitter
+ * 3. Only retry 429 rate limit errors
+ */
+async function callWithRetry(apiClient, params, retryConfig = {}) {
+    const config = {
+        enabled: retryConfig.enabled ?? true,
+        maxRetries: retryConfig.maxRetries ?? 2,
+        baseDelay: retryConfig.baseDelay ?? 5,
+        maxDelay: retryConfig.maxDelay ?? 60,
+        onRetry: retryConfig.onRetry
+    };
+
+    return _retry(apiClient, params, config, 1);
+}
+
+async function _retry(apiClient, params, config, attempt) {
+    try {
+        return await apiClient.chat.completions.create(params);
+
+    } catch (error) {
+        // Only retry 429 errors
+        if (error.status !== 429 || !config.enabled || attempt > config.maxRetries) {
+            throw error;
+        }
+
+        // Try to parse delay from x-ratelimit-reset-tokens header
+        let delay = parseResetHeader(error.headers?.get('x-ratelimit-reset-tokens'));
+
+        if (!delay) {
+            // Fall back to exponential backoff with jitter
+            const exponentialMultiplier = Math.pow(2, attempt - 1);
+            const jitter = 1 + (Math.random() * 0.25);
+            delay = config.baseDelay * exponentialMultiplier * jitter;
+        }
+
+        const cappedDelay = Math.min(delay, config.maxDelay);
+
+        // Call retry callback if provided (for logging/metrics)
+        if (config.onRetry) {
+            config.onRetry({
+                attempt,
+                delay: cappedDelay,
+                error: error.message,
+                remainingTokens: error.headers?.get('x-ratelimit-remaining-tokens'),
+                resetTime: error.headers?.get('x-ratelimit-reset-tokens')
+            });
+        }
+
+        await sleep(cappedDelay * 1000);
+
+        return _retry(apiClient, params, config, attempt + 1);
+    }
+}
+
+/**
+ * Parse x-ratelimit-reset-tokens header
+ * Format: "3m0.088s" or "45.5s"
+ * Returns: number of seconds, or null if cannot parse
+ */
+function parseResetHeader(resetValue) {
+    if (!resetValue) return null;
+
+    try {
+        const match = resetValue.match(/(?:(\d+)m)?(\d+(?:\.\d+)?)s/);
+        if (match) {
+            const minutes = parseInt(match[1] || '0');
+            const seconds = parseFloat(match[2] || '0');
+            const totalSeconds = (minutes * 60) + seconds;
+
+            // Sanity check: delay should be reasonable (0-300s = 5 minutes)
+            if (totalSeconds > 0 && totalSeconds < 300) {
+                return totalSeconds;
+            }
+        }
+    } catch (e) {
+        return null;
+    }
+
+    return null;
+}
+
+/**
+ * Sleep for specified milliseconds
+ */
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // Re-export shared client functions
