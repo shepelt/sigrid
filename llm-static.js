@@ -27,6 +27,7 @@ function generateConversationID() {
  * @param {boolean} opts.saveAssistantMessage - Whether to save assistant message to persistence (default: true)
  * @param {boolean} opts.stream - Enable streaming output (default: false)
  * @param {Function} opts.streamCallback - Callback for streaming chunks: (chunk: string) => void
+ * @param {Object} opts.responseFormat - Response format for structured outputs (e.g., { type: "json_object" } or { type: "json_schema", json_schema: {...} })
  * @returns {Promise<{content: string, conversationID: string}>} - content is empty string if streaming enabled
  */
 export async function executeStatic(prompt, opts = {}) {
@@ -101,10 +102,17 @@ export async function executeStatic(prompt, opts = {}) {
 
     // Non-streaming mode
     if (!opts.stream) {
-        const response = await apiClient.chat.completions.create({
+        const requestParams = {
             model,
             messages
-        });
+        };
+
+        // Add responseFormat if provided
+        if (opts.responseFormat) {
+            requestParams.response_format = opts.responseFormat;
+        }
+
+        const response = await apiClient.chat.completions.create(requestParams);
 
         const content = response.choices[0]?.message?.content || "";
 
@@ -130,11 +138,18 @@ export async function executeStatic(prompt, opts = {}) {
     }
 
     // Streaming mode
-    const stream = await apiClient.chat.completions.create({
+    const streamParams = {
         model,
         messages,
         stream: true
-    });
+    };
+
+    // Add responseFormat if provided
+    if (opts.responseFormat) {
+        streamParams.response_format = opts.responseFormat;
+    }
+
+    const stream = await apiClient.chat.completions.create(streamParams);
 
     // Only accumulate chunks if persistence is enabled
     let fullContent = useInternalConversations ? "" : null;

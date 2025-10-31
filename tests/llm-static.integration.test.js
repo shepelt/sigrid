@@ -291,4 +291,80 @@ describe('LLM Static Integration Tests', () => {
             expect(assistantMessage.content).toBe(result.content);
         }, 30000);
     });
+
+    describe('Structured Outputs with responseFormat', () => {
+        testFn('should support JSON object response format', async () => {
+            const result = await executeStatic('What is 2+2? Respond with JSON containing the answer', {
+                model,
+                responseFormat: { type: "json_object" },
+                instructions: 'You must respond with valid JSON only'
+            });
+
+            expect(result.content.length).toBeGreaterThan(0);
+
+            // Should be valid JSON
+            const parsed = JSON.parse(result.content);
+            expect(parsed).toBeDefined();
+        }, 30000);
+
+        testFn('should support JSON schema response format', async () => {
+            const result = await executeStatic('What is 2+2?', {
+                model,
+                responseFormat: {
+                    type: "json_schema",
+                    json_schema: {
+                        name: "math_response",
+                        strict: true,
+                        schema: {
+                            type: "object",
+                            properties: {
+                                answer: {
+                                    type: "number",
+                                    description: "The numerical answer"
+                                },
+                                explanation: {
+                                    type: "string",
+                                    description: "Brief explanation"
+                                }
+                            },
+                            required: ["answer", "explanation"],
+                            additionalProperties: false
+                        }
+                    }
+                }
+            });
+
+            expect(result.content.length).toBeGreaterThan(0);
+
+            // Should be valid JSON matching schema
+            const parsed = JSON.parse(result.content);
+            expect(parsed).toHaveProperty('answer');
+            expect(parsed).toHaveProperty('explanation');
+            expect(typeof parsed.answer).toBe('number');
+            expect(typeof parsed.explanation).toBe('string');
+            expect(parsed.answer).toBe(4);
+        }, 30000);
+
+        testFn('should support responseFormat with streaming', async () => {
+            const chunks = [];
+
+            const result = await executeStatic('List 3 colors in JSON format', {
+                model,
+                stream: true,
+                responseFormat: { type: "json_object" },
+                instructions: 'You must respond with valid JSON only',
+                streamCallback: (chunk) => {
+                    chunks.push(chunk);
+                }
+            });
+
+            expect(result.content).toBe(''); // Empty in streaming mode
+            expect(chunks.length).toBeGreaterThan(0);
+
+            // Combined chunks should be valid JSON
+            const fullText = chunks.join('');
+            const parsed = JSON.parse(fullText);
+            expect(parsed).toBeDefined();
+        }, 30000);
+    });
 });
