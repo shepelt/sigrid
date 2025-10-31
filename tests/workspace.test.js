@@ -253,9 +253,9 @@ describe('Workspace', () => {
             expect(workspace.path).toBeDefined();
             expect(workspace.id).toBeDefined();
 
-            // Verify it's empty (no files)
+            // Verify it's empty (only .sigrid metadata directory)
             const files = await fs.readdir(workspace.path);
-            expect(files.length).toBe(0);
+            expect(files).toEqual(['.sigrid']);
 
             await workspace.delete();
         });
