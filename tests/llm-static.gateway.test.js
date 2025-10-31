@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import 'dotenv/config';
 import OpenAI from 'openai';
-import { executeStatic, InMemoryPersistence } from './llm-static.js';
+import { executeStatic, InMemoryPersistence } from '../llm-static.js';
 
 /**
  * Gateway tests for llm-static

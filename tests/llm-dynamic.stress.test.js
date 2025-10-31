@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import 'dotenv/config';
-import { initializeClient, execute } from './llm-dynamic.js';
+import { initializeClient, execute } from '../llm-dynamic.js';
 
 /**
  * LLM API Rate Limiting Stress Tests

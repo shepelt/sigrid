@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import 'dotenv/config';  // Load .env file
-import { initializeClient, execute, setSandboxRoot } from './llm-dynamic.js';
+import { initializeClient, execute, setSandboxRoot } from '../llm-dynamic.js';
 import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';

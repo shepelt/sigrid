@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { createWorkspace, InMemoryPersistence, FileSystemPersistence } from './index.js';
+import { createWorkspace, InMemoryPersistence, FileSystemPersistence } from '../index.js';
 
 describe('Workspace.compactHistory()', () => {
     let workspace;

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import * as tar from 'tar';
-import { createWorkspace, openWorkspace, Workspace } from './workspace.js';
+import { createWorkspace, openWorkspace, Workspace } from '../workspace.js';
 
 describe('Workspace', () => {
     let tempDir;

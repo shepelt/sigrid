@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import 'dotenv/config';  // Load .env file
-import { initializeClient, executeStatic, InMemoryPersistence } from './llm-static.js';
+import { initializeClient, executeStatic, InMemoryPersistence } from '../llm-static.js';
 
 /**
  * Integration tests for LLM Static module

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
-import { initializeClient, getClient } from './llm-client.js';
+import { initializeClient, getClient } from '../llm-client.js';
 
 describe('LLM Client', () => {
     // Store original env vars

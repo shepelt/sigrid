@@ -13,7 +13,7 @@ import {
     listDirTool,
     writeFileTool,
     fileTools
-} from './filetooling.js';
+} from '../filetooling.js';
 
 describe('Filetooling', () => {
     let tempDir;

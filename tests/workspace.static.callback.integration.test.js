@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeAll, beforeEach, afterEach } from '@jest/globals';
 import 'dotenv/config';
-import { initializeClient as initDynamic } from './llm-dynamic.js';
-import { initializeClient as initStatic } from './llm-static.js';
-import { createWorkspace, ProgressEvents } from './workspace.js';
+import { initializeClient as initDynamic } from '../llm-dynamic.js';
+import { initializeClient as initStatic } from '../llm-static.js';
+import { createWorkspace, ProgressEvents } from '../workspace.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';

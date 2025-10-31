@@ -4,9 +4,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { execSync } from 'child_process';
-import { createWorkspace, InMemoryPersistence, initializeClient } from './index.js';
-import { applyAddon } from './addon.js';
-import sqliteAddon from './test-fixtures/addons/sqlite.js';
+import { createWorkspace, InMemoryPersistence, initializeClient } from '../index.js';
+import { applyAddon } from '../addon.js';
+import sqliteAddon from '../test-fixtures/addons/sqlite.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

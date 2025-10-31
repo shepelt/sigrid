@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeAll, afterEach } from '@jest/globals';
 import 'dotenv/config';
-import { initializeClient as initStatic } from './llm-static.js';
-import { createWorkspace } from './workspace.js';
-import { applyAddon, isAddonApplied, getAddonInternalPaths } from './addon.js';
-import sqliteAddon from './test-fixtures/addons/sqlite.js';
+import { initializeClient as initStatic } from '../llm-static.js';
+import { createWorkspace } from '../workspace.js';
+import { applyAddon, isAddonApplied, getAddonInternalPaths } from '../addon.js';
+import sqliteAddon from '../test-fixtures/addons/sqlite.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';

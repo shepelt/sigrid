@@ -1,6 +1,6 @@
 import { describe, test, expect } from '@jest/globals';
-import { applyAddon } from './addon.js';
-import { createWorkspace } from './workspace.js';
+import { applyAddon } from '../addon.js';
+import { createWorkspace } from '../workspace.js';
 
 /**
  * Addon Stress Tests

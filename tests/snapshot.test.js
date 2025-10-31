@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
-import { createSnapshot, collectFiles, formatAsXML } from './snapshot.js';
-import { createWorkspace } from './workspace.js';
+import { createSnapshot, collectFiles, formatAsXML } from '../snapshot.js';
+import { createWorkspace } from '../workspace.js';
 import fs from 'fs/promises';
 import path from 'path';
 

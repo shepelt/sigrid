@@ -47,12 +47,12 @@
   },
   "jest": {
     "testMatch": [
-      "**/*.test.js"
+      "**/tests/**/*.test.js"
     ],
     "collectCoverageFrom": [
       "*.js",
       "!chat.js",
-      "!*.test.js"
+      "!tests/**"
     ],
     "coverageDirectory": "coverage",
     "testEnvironment": "node",

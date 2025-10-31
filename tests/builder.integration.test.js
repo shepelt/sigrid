@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import 'dotenv/config';
-import sigrid from './index.js';
-import { initializeClient, setSandboxRoot } from './index.js';
+import sigrid from '../index.js';
+import { initializeClient, setSandboxRoot } from '../index.js';
 import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';
