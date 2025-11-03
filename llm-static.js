@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
 import { getClient } from "./llm-client.js";
+import { extractTokenUsage, estimateTokens } from "./token-utils.js";
 
 const DEFAULT_MODEL = "gpt-5-mini";
 
@@ -33,7 +34,7 @@ function generateConversationID() {
  * @param {number} opts.retryBaseDelay - Base delay in seconds for exponential backoff (default: 5)
  * @param {number} opts.retryMaxDelay - Maximum delay in seconds (default: 60)
  * @param {Function} opts.onRetry - Callback for retry attempts: (info: {attempt, delay, error, remainingTokens, resetTime}) => void
- * @returns {Promise<{content: string, conversationID: string}>} - content is empty string if streaming enabled
+ * @returns {Promise<{content: string, conversationID: string, tokenCount?: Object}>} - content is empty string if streaming enabled, tokenCount contains usage stats if available
  */
 export async function executeStatic(prompt, opts = {}) {
     const apiClient = opts.client || getClient();
@@ -130,6 +131,9 @@ export async function executeStatic(prompt, opts = {}) {
 
         const content = response.choices[0]?.message?.content || "";
 
+        // Extract token usage from response
+        const tokenCount = extractTokenUsage(response);
+
         // Save assistant response to persistence for internal tracking
         if (useInternalConversations) {
             const saveAssistant = opts.saveAssistantMessage !== false; // Default to true
@@ -145,17 +149,29 @@ export async function executeStatic(prompt, opts = {}) {
             }
         }
 
-        return {
+        const result = {
             content,
             conversationID
         };
+
+        // Add token count if available
+        if (tokenCount) {
+            result.tokenCount = tokenCount;
+        }
+
+        return result;
     }
 
     // Streaming mode
     const streamParams = {
         model,
         messages,
-        stream: true
+        stream: true,
+        // Request usage data in final stream chunk
+        // Works with OpenAI and OpenAI-compatible gateways
+        stream_options: {
+            include_usage: true
+        }
     };
 
     // Add responseFormat if provided
@@ -165,22 +181,26 @@ export async function executeStatic(prompt, opts = {}) {
 
     const stream = await callWithRetry(apiClient, streamParams, retryConfig);
 
-    // Only accumulate chunks if persistence is enabled
-    let fullContent = useInternalConversations ? "" : null;
+    // Always accumulate chunks for token estimation and optional persistence
+    let fullContent = "";
+    let usageData = null;
 
     for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content || '';
 
         if (text) {
-            // Accumulate for persistence if needed
-            if (fullContent !== null) {
-                fullContent += text;
-            }
+            // Accumulate all content (needed for token estimation)
+            fullContent += text;
 
             // Stream to callback
             if (opts.streamCallback) {
                 opts.streamCallback(text);
             }
+        }
+
+        // Extract usage data from final chunk (OpenAI streaming)
+        if (chunk.usage) {
+            usageData = chunk.usage;
         }
     }
 
@@ -199,10 +219,33 @@ export async function executeStatic(prompt, opts = {}) {
         }
     }
 
-    // Return empty content for streaming mode
+    // Return token counts for streaming mode
+    // If we got actual usage data from the stream, use it
+    // Otherwise, estimate based on content
+    let tokenCount;
+    if (usageData) {
+        tokenCount = extractTokenUsage({ usage: usageData });
+    } else {
+        // Fallback to estimation if no usage data available
+        let estimatedPromptTokens = 0;
+        for (const msg of messages) {
+            estimatedPromptTokens += estimateTokens(msg.content || '');
+        }
+        const estimatedCompletionTokens = estimateTokens(fullContent || '');
+
+        tokenCount = {
+            promptTokens: estimatedPromptTokens,
+            completionTokens: estimatedCompletionTokens,
+            totalTokens: estimatedPromptTokens + estimatedCompletionTokens,
+            estimated: true  // Flag to indicate these are estimates, not exact counts from API
+        };
+    }
+
+    // Return empty content for streaming mode with token counts
     return {
         content: "",
-        conversationID
+        conversationID,
+        tokenCount
     };
 }
 

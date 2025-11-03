@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
-import { createSnapshot, collectFiles, formatAsXML, DEFAULT_EXCLUDES, DEFAULT_EXTENSIONS } from '../snapshot.js';
+import { createSnapshot, collectFiles, formatAsXML, estimateSnapshotTokens, DEFAULT_EXCLUDES, DEFAULT_EXTENSIONS } from '../snapshot.js';
+import { estimateTokens } from '../token-utils.js';
 import { createWorkspace } from '../workspace.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -471,6 +472,50 @@ describe('Snapshot Tests', () => {
             expect(snapshot).toContain('<file path=');
             expect(snapshot).toContain('src/index.ts');
             expect(snapshot).toContain('</file>');
+        });
+
+        test('should create snapshot with metadata including token count', async () => {
+            const result = await createSnapshot(workspace.path, {
+                include: ['src/**/*'],
+                includeMetadata: true
+            });
+
+            expect(result).toHaveProperty('snapshot');
+            expect(result).toHaveProperty('metadata');
+            expect(result.metadata).toHaveProperty('fileCount');
+            expect(result.metadata).toHaveProperty('omittedCount');
+            expect(result.metadata).toHaveProperty('estimatedTokens');
+
+            expect(typeof result.snapshot).toBe('string');
+            expect(result.metadata.fileCount).toBeGreaterThan(0);
+            expect(result.metadata.estimatedTokens).toBeGreaterThan(0);
+        });
+    });
+
+    describe('Token Estimation', () => {
+        test('estimateTokens should estimate token count from text', () => {
+            const text = "Hello, world! This is a test.";
+            const tokens = estimateTokens(text);
+
+            expect(tokens).toBeGreaterThan(0);
+            expect(tokens).toBe(Math.ceil(text.length / 4));
+        });
+
+        test('estimateSnapshotTokens should estimate token count from snapshot', () => {
+            const snapshot = '<file path="test.js">\nconsole.log("Hello");\n</file>';
+            const tokens = estimateSnapshotTokens(snapshot);
+
+            expect(tokens).toBeGreaterThan(0);
+            expect(tokens).toBe(Math.ceil(snapshot.length / 4));
+        });
+
+        test('should estimate tokens for real workspace snapshot', async () => {
+            const snapshot = await workspace.snapshot();
+            const tokens = estimateSnapshotTokens(snapshot);
+
+            expect(tokens).toBeGreaterThan(0);
+            // Reasonable estimate for a test workspace with a few files
+            expect(tokens).toBeGreaterThan(10);
         });
     });
 

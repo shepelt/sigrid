@@ -4,6 +4,7 @@ import {
     executeFileTool
 } from "./filetooling.js";
 import { getClient } from "./llm-client.js";
+import { estimateTokens, accumulateTokenUsage } from "./token-utils.js";
 
 // System prompt constants
 const PURE_MODE_INSTRUCTIONS = [
@@ -83,13 +84,17 @@ export function extractText(r) {
  * @param {string} opts.reasoningEffort - Reasoning effort level: "minimal", "low", "medium", "high" (GPT-5 only)
  * @param {string[]} opts.disableTools - Array of tool names to disable (e.g., ['read_file', 'write_file'])
  * @param {Function} opts.progressCallback - Progress callback (action, message)
- * @returns {Promise<{content: string, conversationID: string}>}
+ * @returns {Promise<{content: string, conversationID: string, tokenCount?: Object}>}
  */
 export async function execute(prompt, opts = {}) {
     const apiClient = opts.client || getClient();
 
     let conversationID = opts.conversationID;
     const messages = [];
+
+    // Track estimated token usage (dynamic mode doesn't return usage stats)
+    let estimatedPromptTokens = 0;
+    let estimatedCompletionTokens = 0;
 
     // Prepare conversation for provider-managed conversations (OpenAI)
     if (opts.conversation && !conversationID) {
@@ -105,6 +110,7 @@ export async function execute(prompt, opts = {}) {
 
         for (const inst of instructions) {
             messages.push({ role: "system", content: inst });
+            estimatedPromptTokens += estimateTokens(inst);
         }
     }
 
@@ -112,12 +118,14 @@ export async function execute(prompt, opts = {}) {
     if (opts.pure) {
         for (const inst of PURE_MODE_INSTRUCTIONS) {
             messages.push({ role: "system", content: inst });
+            estimatedPromptTokens += estimateTokens(inst);
         }
     }
 
     // Add tooling instruction
     const toolingInstruction = opts.pure ? PURE_MODE_TOOLING_INSTRUCTION : TOOLING_INSTRUCTION;
     messages.push({ role: "system", content: toolingInstruction });
+    estimatedPromptTokens += estimateTokens(toolingInstruction);
 
     // Add additional user prompts before main prompt
     if (opts.prompts) {
@@ -127,11 +135,13 @@ export async function execute(prompt, opts = {}) {
 
         for (const p of prompts) {
             messages.push({ role: "user", content: p });
+            estimatedPromptTokens += estimateTokens(p);
         }
     }
 
     // Add current user prompt
     messages.push({ role: "user", content: prompt });
+    estimatedPromptTokens += estimateTokens(prompt);
 
     // Progress callback
     if (opts.progressCallback) {
@@ -243,10 +253,26 @@ export async function execute(prompt, opts = {}) {
         }
     }
 
-    return {
+    // Estimate completion tokens from final response
+    estimatedCompletionTokens += estimateTokens(response.output_text || '');
+
+    // Return result with estimated token counts
+    const result = {
         content: response.output_text,
         conversationID: response.conversation?.id
     };
+
+    // Add estimated token count
+    if (estimatedPromptTokens > 0 || estimatedCompletionTokens > 0) {
+        result.tokenCount = {
+            promptTokens: estimatedPromptTokens,
+            completionTokens: estimatedCompletionTokens,
+            totalTokens: estimatedPromptTokens + estimatedCompletionTokens,
+            estimated: true  // Flag to indicate these are estimates, not exact counts
+        };
+    }
+
+    return result;
 }
 
 /**

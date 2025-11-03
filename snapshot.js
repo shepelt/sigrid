@@ -3,6 +3,7 @@ import path from 'node:path';
 import { glob } from 'glob';
 import ignore from 'ignore';
 import { getAddonInternalPaths } from './addon.js';
+import { estimateTokens } from './token-utils.js';
 
 /**
  * Default file extensions to include
@@ -205,6 +206,15 @@ export function formatAsXML(files, omitted = []) {
 }
 
 /**
+ * Estimate token count for a snapshot
+ * @param {string} snapshot - XML formatted snapshot string
+ * @returns {number} Estimated token count
+ */
+export function estimateSnapshotTokens(snapshot) {
+    return estimateTokens(snapshot);
+}
+
+/**
  * Create workspace snapshot in XML format
  * @param {string} workspaceDir - Workspace directory path
  * @param {Object} options - Snapshot options
@@ -214,11 +224,13 @@ export function formatAsXML(files, omitted = []) {
  * @param {string[]} options.include - Patterns to include (default: ['**\/*'])
  * @param {boolean} options.respectGitignore - Respect .gitignore patterns (default: true)
  * @param {boolean} options.includePlaceholders - Include placeholders for omitted files (default: true)
- * @returns {Promise<string>} XML formatted snapshot string
+ * @param {boolean} options.includeMetadata - Return metadata object with snapshot and token count (default: false)
+ * @returns {Promise<string|Object>} XML formatted snapshot string, or object with {snapshot, metadata} if includeMetadata is true
  */
 export async function createSnapshot(workspaceDir, options = {}) {
     const {
-        includePlaceholders = true
+        includePlaceholders = true,
+        includeMetadata = false
     } = options;
 
     // Collect files and omitted file info
@@ -230,5 +242,19 @@ export async function createSnapshot(workspaceDir, options = {}) {
 
     // Format as XML
     const omittedFiles = includePlaceholders ? omitted : [];
-    return formatAsXML(files, omittedFiles);
+    const snapshot = formatAsXML(files, omittedFiles);
+
+    // Return with metadata if requested
+    if (includeMetadata) {
+        return {
+            snapshot,
+            metadata: {
+                fileCount: files.length,
+                omittedCount: omitted.length,
+                estimatedTokens: estimateTokens(snapshot)
+            }
+        };
+    }
+
+    return snapshot;
 }

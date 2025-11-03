@@ -45,9 +45,16 @@ import {
     createSnapshot,
     collectFiles,
     formatAsXML,
+    estimateSnapshotTokens,
     DEFAULT_EXCLUDES,
     DEFAULT_EXTENSIONS
 } from './snapshot.js';
+
+import {
+    estimateTokens,
+    extractTokenUsage,
+    accumulateTokenUsage
+} from './token-utils.js';
 
 // Factory function that creates a new builder instance
 function sigrid() {
@@ -79,8 +86,12 @@ sigrid.isAddonApplied = isAddonApplied;
 sigrid.createSnapshot = createSnapshot;
 sigrid.collectFiles = collectFiles;
 sigrid.formatAsXML = formatAsXML;
+sigrid.estimateSnapshotTokens = estimateSnapshotTokens;
 sigrid.DEFAULT_EXCLUDES = DEFAULT_EXCLUDES;
 sigrid.DEFAULT_EXTENSIONS = DEFAULT_EXTENSIONS;
+sigrid.estimateTokens = estimateTokens;
+sigrid.extractTokenUsage = extractTokenUsage;
+sigrid.accumulateTokenUsage = accumulateTokenUsage;
 
 // Default export: factory function with attached methods
 export default sigrid;
@@ -111,6 +122,10 @@ export {
     createSnapshot,
     collectFiles,
     formatAsXML,
+    estimateSnapshotTokens,
     DEFAULT_EXCLUDES,
-    DEFAULT_EXTENSIONS
+    DEFAULT_EXTENSIONS,
+    estimateTokens,
+    extractTokenUsage,
+    accumulateTokenUsage
 };

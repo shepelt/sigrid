@@ -304,7 +304,13 @@ sigrid.initializeClient('your-api-key');
 ```javascript
 {
   content: "...",              // LLM response text
-  conversationID: "..."        // Conversation ID (for multi-turn)
+  conversationID: "...",       // Conversation ID (for multi-turn)
+  tokenCount: {                // Token usage (when available)
+    promptTokens: 100,
+    completionTokens: 50,
+    totalTokens: 150,
+    estimated: false           // true if estimated, false/undefined if actual
+  }
 }
 ```
 
@@ -316,9 +322,153 @@ sigrid.initializeClient('your-api-key');
   filesWritten: [              // Automatically deserialized files
     { path: "src/App.tsx", size: 1234 },
     { path: "src/components/Button.tsx", size: 567 }
-  ]
+  ],
+  tokenCount: {                // Token usage (when available)
+    promptTokens: 2367,
+    completionTokens: 668,
+    totalTokens: 3035,
+    estimated: false
+  }
 }
 ```
+
+### Token Counting
+
+Sigrid automatically tracks token usage for all LLM requests, helping you monitor costs and optimize prompts.
+
+#### Token Count Availability
+
+Token counts are returned in the `tokenCount` field of the response:
+
+| Mode | Provider | Non-Streaming | Streaming | Notes |
+|------|----------|---------------|-----------|-------|
+| Static | OpenAI | ✅ Actual | ✅ Actual | Via `stream_options` |
+| Static | Claude | ✅ Actual | ⚠️ Estimated* | Gateway limitation |
+| Dynamic | Any | ⚠️ Estimated | ⚠️ Estimated | Server-side conversations |
+
+*Claude's API returns usage in streaming, but it's lost when translated to OpenAI format by the gateway
+
+#### Basic Usage
+
+```javascript
+const result = await sigrid()
+  .model('gpt-5-mini')
+  .execute('Explain quantum computing');
+
+console.log('Token usage:');
+console.log(`  Prompt: ${result.tokenCount.promptTokens}`);
+console.log(`  Completion: ${result.tokenCount.completionTokens}`);
+console.log(`  Total: ${result.tokenCount.totalTokens}`);
+
+if (result.tokenCount.estimated) {
+  console.log('  (estimated ~4 chars/token)');
+}
+```
+
+#### Workspace Token Tracking
+
+```javascript
+import { createWorkspace } from 'sigrid';
+
+const workspace = await createWorkspace();
+
+const result = await workspace.execute(
+  'Create a React component',
+  {
+    mode: 'static',
+    model: 'gpt-5-mini'
+  }
+);
+
+console.log(`Generated ${result.filesWritten.length} files`);
+console.log(`Used ${result.tokenCount.totalTokens} tokens`);
+```
+
+#### Snapshot Token Estimation
+
+Estimate how many tokens a snapshot will use before executing:
+
+```javascript
+import { createSnapshot, estimateSnapshotTokens } from 'sigrid';
+
+// Get snapshot with metadata
+const result = await createSnapshot('./my-project', {
+  include: ['src/**/*'],
+  includeMetadata: true
+});
+
+console.log(`Files: ${result.metadata.fileCount}`);
+console.log(`Estimated tokens: ${result.metadata.estimatedTokens}`);
+
+// Or estimate any snapshot string
+const snapshot = await workspace.snapshot();
+const tokens = estimateSnapshotTokens(snapshot);
+console.log(`Snapshot size: ${tokens} tokens`);
+```
+
+#### Cost Tracking
+
+Track cumulative costs across multiple requests:
+
+```javascript
+import { accumulateTokenUsage } from 'sigrid';
+
+const usages = [];
+
+// Execute multiple requests
+for (const task of tasks) {
+  const result = await sigrid().execute(task.prompt);
+  usages.push(result.tokenCount);
+}
+
+// Calculate totals
+const total = accumulateTokenUsage(usages);
+console.log(`Total tokens: ${total.totalTokens}`);
+
+// Calculate cost (example: GPT-5-mini pricing)
+const inputCost = total.promptTokens * 0.00000125;
+const outputCost = total.completionTokens * 0.00001;
+console.log(`Total cost: $${(inputCost + outputCost).toFixed(4)}`);
+```
+
+#### Token Counting Utilities
+
+```javascript
+import { estimateTokens, extractTokenUsage, accumulateTokenUsage } from 'sigrid';
+
+// Estimate tokens for any text (~4 chars/token)
+const tokens = estimateTokens('Hello, world!');
+console.log(`Estimated: ${tokens} tokens`);
+
+// Extract usage from OpenAI API response
+const usage = extractTokenUsage(response);
+console.log(usage); // { promptTokens, completionTokens, totalTokens }
+
+// Accumulate multiple usages
+const total = accumulateTokenUsage([usage1, usage2, usage3]);
+console.log(`Total: ${total.totalTokens} tokens`);
+```
+
+#### Token Count Fields
+
+```javascript
+{
+  promptTokens: 2367,      // Input tokens (prompt + context)
+  completionTokens: 668,   // Output tokens (LLM response)
+  totalTokens: 3035,       // Sum of prompt + completion
+  estimated: false         // true if estimated, false/undefined if actual from API
+}
+```
+
+The `estimated` flag indicates:
+- `undefined` or `false`: Actual counts from the API
+- `true`: Estimated using ~4 chars/token approximation
+
+**Notes:**
+- Static mode with OpenAI: Always returns actual counts (streaming and non-streaming)
+- Static mode with Claude: Actual for non-streaming, estimated for streaming (gateway limitation)
+- Dynamic mode: Always estimated (OpenAI's conversation API doesn't return usage)
+- Estimation is conservative and slightly overestimates
 
 ### File Tools
 

@@ -50,6 +50,15 @@ describe('LLM Static Integration Tests', () => {
             expect(result).toHaveProperty('conversationID');
             expect(typeof result.content).toBe('string');
             expect(result.content.length).toBeGreaterThan(0);
+
+            // Token count should be present for non-streaming responses
+            expect(result).toHaveProperty('tokenCount');
+            expect(result.tokenCount).toHaveProperty('promptTokens');
+            expect(result.tokenCount).toHaveProperty('completionTokens');
+            expect(result.tokenCount).toHaveProperty('totalTokens');
+            expect(result.tokenCount.promptTokens).toBeGreaterThan(0);
+            expect(result.tokenCount.completionTokens).toBeGreaterThan(0);
+            expect(result.tokenCount.totalTokens).toBeGreaterThan(0);
         }, 30000);
 
         testFn('should respect custom instructions', async () => {
@@ -191,6 +200,12 @@ describe('LLM Static Integration Tests', () => {
             // Chunks combined should form complete response
             const fullText = chunks.join('');
             expect(fullText.length).toBeGreaterThan(0);
+
+            // Token counts should be available for streaming responses (from OpenAI stream_options or estimated)
+            expect(result.tokenCount).toBeDefined();
+            expect(result.tokenCount.promptTokens).toBeGreaterThan(0);
+            expect(result.tokenCount.completionTokens).toBeGreaterThan(0);
+            expect(result.tokenCount.totalTokens).toBeGreaterThan(0);
         }, 30000);
 
         testFn('should stream with internal conversation persistence', async () => {
