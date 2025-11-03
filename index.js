@@ -41,6 +41,14 @@ import {
     isAddonApplied
 } from './addon.js';
 
+import {
+    createSnapshot,
+    collectFiles,
+    formatAsXML,
+    DEFAULT_EXCLUDES,
+    DEFAULT_EXTENSIONS
+} from './snapshot.js';
+
 // Factory function that creates a new builder instance
 function sigrid() {
     return new SigridBuilder();
@@ -68,6 +76,11 @@ sigrid.applyAddon = applyAddon;
 sigrid.generateAIRulesFromAPI = generateAIRulesFromAPI;
 sigrid.getAddonInternalPaths = getAddonInternalPaths;
 sigrid.isAddonApplied = isAddonApplied;
+sigrid.createSnapshot = createSnapshot;
+sigrid.collectFiles = collectFiles;
+sigrid.formatAsXML = formatAsXML;
+sigrid.DEFAULT_EXCLUDES = DEFAULT_EXCLUDES;
+sigrid.DEFAULT_EXTENSIONS = DEFAULT_EXTENSIONS;
 
 // Default export: factory function with attached methods
 export default sigrid;
@@ -94,5 +107,10 @@ export {
     applyAddon,
     generateAIRulesFromAPI,
     getAddonInternalPaths,
-    isAddonApplied
+    isAddonApplied,
+    createSnapshot,
+    collectFiles,
+    formatAsXML,
+    DEFAULT_EXCLUDES,
+    DEFAULT_EXTENSIONS
 };
