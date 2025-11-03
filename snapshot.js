@@ -18,18 +18,29 @@ const DEFAULT_EXTENSIONS = [
 ];
 
 /**
- * Default directories to exclude
+ * Default directories and files to exclude
  */
 const DEFAULT_EXCLUDES = [
+    // Dependencies
     'node_modules',
-    '.git',
-    '.sigrid',      // Sigrid workspace metadata (like .git)
+
+    // Build artifacts
     'dist',
     'build',
     '.next',
     'out',
     'coverage',
-    '.cache'
+
+    // Version control / tools
+    '.git',
+    '.sigrid',      // Sigrid workspace metadata (like .git)
+    '.cache',
+
+    // Lock files (machine-generated, coupled to node_modules)
+    'package-lock.json',   // npm
+    'pnpm-lock.yaml',      // pnpm
+    'yarn.lock',           // yarn
+    'bun.lockb'            // bun
 ];
 
 /**

@@ -194,6 +194,52 @@ describe('Snapshot Tests', () => {
             expect(customFile).toBeDefined();
             expect(customFile?.content).toBe('custom config');
         });
+
+        test('should exclude JavaScript lock files by default', async () => {
+            // Create lock files
+            await fs.writeFile(
+                path.join(workspace.path, 'package-lock.json'),
+                '{"lockfileVersion": 3, "packages": {}}'
+            );
+            await fs.writeFile(
+                path.join(workspace.path, 'yarn.lock'),
+                '# yarn lockfile v1\n'
+            );
+            await fs.writeFile(
+                path.join(workspace.path, 'pnpm-lock.yaml'),
+                'lockfileVersion: 5.4\n'
+            );
+            await fs.writeFile(
+                path.join(workspace.path, 'bun.lockb'),
+                'binary lock file content'
+            );
+
+            const { files } = await collectFiles(workspace.path);
+
+            // Lock files should not be in collected files
+            expect(files.some(f => f.path === 'package-lock.json')).toBe(false);
+            expect(files.some(f => f.path === 'yarn.lock')).toBe(false);
+            expect(files.some(f => f.path === 'pnpm-lock.yaml')).toBe(false);
+            expect(files.some(f => f.path === 'bun.lockb')).toBe(false);
+
+            // But package.json should still be included
+            expect(files.some(f => f.path === 'package.json')).toBe(true);
+        });
+
+        test('should allow including lock files when explicitly overriding excludes', async () => {
+            // Create lock file
+            await fs.writeFile(
+                path.join(workspace.path, 'package-lock.json'),
+                '{"lockfileVersion": 3}'
+            );
+
+            const { files } = await collectFiles(workspace.path, {
+                exclude: []  // Empty array = include everything (except gitignored)
+            });
+
+            // Lock file should be included when excludes are overridden
+            expect(files.some(f => f.path === 'package-lock.json')).toBe(true);
+        });
     });
 
     describe('formatAsXML', () => {
