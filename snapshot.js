@@ -7,7 +7,7 @@ import { getAddonInternalPaths } from './addon.js';
 /**
  * Default file extensions to include
  */
-const DEFAULT_EXTENSIONS = [
+export const DEFAULT_EXTENSIONS = [
     '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts',
     '.css', '.scss', '.sass', '.less',
     '.html', '.htm',
@@ -20,7 +20,7 @@ const DEFAULT_EXTENSIONS = [
 /**
  * Default directories and files to exclude
  */
-const DEFAULT_EXCLUDES = [
+export const DEFAULT_EXCLUDES = [
     // Dependencies
     'node_modules',
 

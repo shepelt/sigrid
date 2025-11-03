@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
-import { createSnapshot, collectFiles, formatAsXML } from '../snapshot.js';
+import { createSnapshot, collectFiles, formatAsXML, DEFAULT_EXCLUDES, DEFAULT_EXTENSIONS } from '../snapshot.js';
 import { createWorkspace } from '../workspace.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -239,6 +239,52 @@ describe('Snapshot Tests', () => {
 
             // Lock file should be included when excludes are overridden
             expect(files.some(f => f.path === 'package-lock.json')).toBe(true);
+        });
+
+        test('should export DEFAULT_EXCLUDES and DEFAULT_EXTENSIONS for application use', () => {
+            // Verify exports are available
+            expect(DEFAULT_EXCLUDES).toBeDefined();
+            expect(DEFAULT_EXTENSIONS).toBeDefined();
+
+            // Verify they are arrays
+            expect(Array.isArray(DEFAULT_EXCLUDES)).toBe(true);
+            expect(Array.isArray(DEFAULT_EXTENSIONS)).toBe(true);
+
+            // Verify lock files are in DEFAULT_EXCLUDES
+            expect(DEFAULT_EXCLUDES).toContain('package-lock.json');
+            expect(DEFAULT_EXCLUDES).toContain('yarn.lock');
+            expect(DEFAULT_EXCLUDES).toContain('pnpm-lock.yaml');
+            expect(DEFAULT_EXCLUDES).toContain('bun.lockb');
+
+            // Verify node_modules is still there
+            expect(DEFAULT_EXCLUDES).toContain('node_modules');
+
+            // Verify common extensions are in DEFAULT_EXTENSIONS
+            expect(DEFAULT_EXTENSIONS).toContain('.js');
+            expect(DEFAULT_EXTENSIONS).toContain('.ts');
+        });
+
+        test('should allow extending DEFAULT_EXCLUDES in applications', async () => {
+            // Simulate application extending defaults
+            const customExcludes = [
+                ...DEFAULT_EXCLUDES,
+                'custom-exclude.txt'
+            ];
+
+            await fs.writeFile(
+                path.join(workspace.path, 'custom-exclude.txt'),
+                'should be excluded'
+            );
+
+            const { files } = await collectFiles(workspace.path, {
+                exclude: customExcludes
+            });
+
+            // Custom file should be excluded
+            expect(files.some(f => f.path === 'custom-exclude.txt')).toBe(false);
+
+            // Lock files should still be excluded
+            expect(files.some(f => f.path === 'package-lock.json')).toBe(false);
         });
     });
 
