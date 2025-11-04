@@ -290,13 +290,24 @@ sigrid.initializeClient('your-api-key');
   // Or provide pre-computed snapshot:
   snapshot: '<xml>...</xml>',   // Pre-computed snapshot string
 
-  temperature: 0.7,             // LLM temperature (optional)
-  reasoningEffort: 'medium',    // Reasoning effort (optional)
+  // Standard OpenAI API parameters (passed through to LLM)
+  max_tokens: 16000,            // Maximum output tokens
+  temperature: 0.7,             // LLM temperature (0.0-2.0)
+  top_p: 1.0,                   // Nucleus sampling threshold
+  frequency_penalty: 0.0,       // Frequency penalty (-2.0 to 2.0)
+  presence_penalty: 0.0,        // Presence penalty (-2.0 to 2.0)
+  stop: ['###'],                // Stop sequences (string or array)
+
+  reasoningEffort: 'medium',    // Reasoning effort for GPT-5 models (optional)
 
   // Multi-turn conversation (highly recommended for static mode)
   conversation: true,           // Enable conversation mode (required for persistence)
   conversationID: null,         // Continue existing conversation (optional)
-  conversationPersistence: null // Persistence provider (optional, enables internal tracking)
+  conversationPersistence: null,// Persistence provider (optional, enables internal tracking)
+
+  // Streaming
+  stream: false,                // Enable streaming output
+  streamCallback: (chunk) => {} // Callback for streaming chunks
 }
 ```
 
@@ -726,6 +737,8 @@ const result = await workspace.execute(
   {
     mode: 'static',
     model: 'gpt-5-mini',
+    max_tokens: 16000,  // Control output length
+    temperature: 0.7,   // Control randomness
     instructions: ['Use React and TypeScript', 'Follow best practices']
   }
 );
@@ -738,6 +751,28 @@ result.filesWritten.forEach(file => {
 // Clean up
 await workspace.delete();
 ```
+
+#### API Parameters
+
+All standard OpenAI API parameters (`max_tokens`, `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`, `stop`) are passed through to the LLM API. This allows precise control over model behavior:
+
+```javascript
+const result = await workspace.execute(
+  'Create a utility module',
+  {
+    mode: 'static',
+    model: 'gpt-5-mini',
+    max_tokens: 16000,        // Limit output length
+    temperature: 0.7,         // Control randomness (0.0 = deterministic, 2.0 = very random)
+    top_p: 0.9,               // Nucleus sampling threshold
+    frequency_penalty: 0.0,   // Penalize frequent tokens
+    presence_penalty: 0.0,    // Penalize any repeated tokens
+    stop: ['###', 'END']      // Stop sequences
+  }
+);
+```
+
+**Note:** Prior to recent fixes, these parameters were silently dropped. They are now properly passed to the API in both streaming and non-streaming modes.
 
 #### Snapshot Configuration
 

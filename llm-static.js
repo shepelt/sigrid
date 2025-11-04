@@ -122,6 +122,14 @@ export async function executeStatic(prompt, opts = {}) {
             messages
         };
 
+        // Pass through additional API parameters
+        if (opts.max_tokens !== undefined) requestParams.max_tokens = opts.max_tokens;
+        if (opts.temperature !== undefined) requestParams.temperature = opts.temperature;
+        if (opts.top_p !== undefined) requestParams.top_p = opts.top_p;
+        if (opts.frequency_penalty !== undefined) requestParams.frequency_penalty = opts.frequency_penalty;
+        if (opts.presence_penalty !== undefined) requestParams.presence_penalty = opts.presence_penalty;
+        if (opts.stop !== undefined) requestParams.stop = opts.stop;
+
         // Add responseFormat if provided
         if (opts.responseFormat) {
             requestParams.response_format = opts.responseFormat;
@@ -173,6 +181,14 @@ export async function executeStatic(prompt, opts = {}) {
             include_usage: true
         }
     };
+
+    // Pass through additional API parameters
+    if (opts.max_tokens !== undefined) streamParams.max_tokens = opts.max_tokens;
+    if (opts.temperature !== undefined) streamParams.temperature = opts.temperature;
+    if (opts.top_p !== undefined) streamParams.top_p = opts.top_p;
+    if (opts.frequency_penalty !== undefined) streamParams.frequency_penalty = opts.frequency_penalty;
+    if (opts.presence_penalty !== undefined) streamParams.presence_penalty = opts.presence_penalty;
+    if (opts.stop !== undefined) streamParams.stop = opts.stop;
 
     // Add responseFormat if provided
     if (opts.responseFormat) {
