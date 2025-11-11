@@ -321,6 +321,14 @@ export async function executeStatic(prompt, opts = {}) {
     if (opts.presence_penalty !== undefined) streamParams.presence_penalty = opts.presence_penalty;
     if (opts.stop !== undefined) streamParams.stop = opts.stop;
 
+    // Add tools if provided (normalize format) - IMPORTANT: Also needed for streaming!
+    if (opts.tools && opts.tools.length > 0) {
+        streamParams.tools = opts.tools.map(normalizeToolFormat);
+        if (opts.tool_choice !== undefined) {
+            streamParams.tool_choice = opts.tool_choice;
+        }
+    }
+
     // Add responseFormat if provided
     if (opts.responseFormat) {
         streamParams.response_format = opts.responseFormat;
@@ -383,7 +391,8 @@ export async function executeStatic(prompt, opts = {}) {
 
     // If we got tool calls in streaming mode, execute them
     // This converts streaming to non-streaming for tool execution
-    if (toolCalls.length > 0 && opts.toolExecutor) {
+    const toolExecutor = opts.toolExecutor || executeFileTool;
+    if (toolCalls.length > 0 && toolExecutor) {
         // Add assistant message with tool calls to conversation
         const assistantMessage = {
             role: "assistant",
@@ -399,7 +408,7 @@ export async function executeStatic(prompt, opts = {}) {
                 const toolArgs = JSON.parse(toolCall.function.arguments || "{}");
 
                 // Execute tool
-                const toolResult = await opts.toolExecutor(
+                const toolResult = await toolExecutor(
                     toolName,
                     toolArgs,
                     opts.progressCallback,

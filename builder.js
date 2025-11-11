@@ -237,8 +237,16 @@ export class SigridBuilder {
             finalOptions.tools = [megaWriterTool, ...customTools];
 
             // Set tool_choice to required for optimal performance (skip LLM thinking time)
+            // Format depends on provider:
+            // - OpenAI: { type: "function", function: { name: "..." } }
+            // - Anthropic: { type: "tool", name: "..." }
             if (!finalOptions.tool_choice) {
-                finalOptions.tool_choice = { type: "tool", name: "write_multiple_files" };
+                const model = finalOptions.model || '';
+                const isAnthropic = model.includes('anthropic') || model.includes('claude');
+
+                finalOptions.tool_choice = isAnthropic
+                    ? { type: "tool", name: "write_multiple_files" }
+                    : { type: "function", function: { name: "write_multiple_files" } };
             }
 
             delete finalOptions.enableMegawriter; // Remove flag, no longer needed

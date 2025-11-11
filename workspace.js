@@ -225,6 +225,22 @@ export class Workspace {
     async _executeStatic(prompt, options) {
         const progressCallback = options.progressCallback;
 
+        // Track files written via megawriter tool execution
+        const megawriterFilesWritten = [];
+        const wrappedProgressCallback = options.enableMegawriter && progressCallback
+            ? (event, data) => {
+                // Track FILE_STREAMING_END events to capture files written by megawriter
+                if (event === ProgressEvents.FILE_STREAMING_END && data?.path) {
+                    megawriterFilesWritten.push({
+                        path: data.path,
+                        size: data.fullContent?.length || 0
+                    });
+                }
+                // Forward to user's callback
+                progressCallback(event, data);
+            }
+            : progressCallback;
+
         // Generate or use provided snapshot
         let snapshot;
 
@@ -291,6 +307,7 @@ export class Workspace {
             prompts: ['Here is the full codebase for context:', snapshot],
             saveAssistantMessage: false,  // We'll save compact version ourselves
             streamCallback,  // Use wrapped callback if streaming
+            progressCallback: wrappedProgressCallback,  // Use wrapped callback to track megawriter files
             // Note: conversationPersistence is optional
             // - If provided: uses internal tracking (efficient, fresh snapshots)
             // - If not provided: not supported in static mode (no server-side conversations)
@@ -313,14 +330,25 @@ export class Workspace {
         // Get content from either accumulated chunks (streaming) or result (non-streaming)
         const fullContent = options.stream ? accumulatedContent : result.content;
 
-        // Deserialize XML output to filesystem
-        // decodeHtmlEntities defaults to false (following DYAD's proven approach)
-        const decodeEntities = options.decodeHtmlEntities === true;
+        // Populate filesWritten based on mode:
+        // - If megawriter was used, files are already written via tool execution - use tracked files
+        // - Otherwise, deserialize XML output to filesystem
+        if (options.enableMegawriter && megawriterFilesWritten.length > 0) {
+            // Files already written by megawriter tool - use tracked list
+            result.filesWritten = megawriterFilesWritten;
+            if (progressCallback) {
+                progressCallback(ProgressEvents.FILES_WRITTEN, { count: result.filesWritten.length });
+            }
+        } else {
+            // Deserialize XML output to filesystem (traditional mode)
+            // decodeHtmlEntities defaults to false (following DYAD's proven approach)
+            const decodeEntities = options.decodeHtmlEntities === true;
 
-        if (progressCallback) progressCallback(ProgressEvents.FILES_WRITING);
-        result.filesWritten = await this.deserializeXmlOutput(fullContent, decodeEntities);
-        if (progressCallback) {
-            progressCallback(ProgressEvents.FILES_WRITTEN, { count: result.filesWritten.length });
+            if (progressCallback) progressCallback(ProgressEvents.FILES_WRITING);
+            result.filesWritten = await this.deserializeXmlOutput(fullContent, decodeEntities);
+            if (progressCallback) {
+                progressCallback(ProgressEvents.FILES_WRITTEN, { count: result.filesWritten.length });
+            }
         }
 
         // Save compact assistant message to persistence (default behavior for static mode)
