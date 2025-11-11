@@ -1,6 +1,6 @@
 import { execute as executeDynamic } from './llm-dynamic.js';
 import { executeStatic } from './llm-static.js';
-import { fileTools, writeFileTool, megaWriterTool } from './filetooling.js';
+import { megaWriterTool } from './filetooling.js';
 
 /**
  * Fluent builder for Sigrid LLM execution
@@ -157,17 +157,6 @@ export class SigridBuilder {
     }
 
     /**
-     * Enable built-in write_file tool
-     * - In static mode: Only write_file (read via snapshot)
-     * - In dynamic mode: All file tools (read_file, write_file, list_dir)
-     * @returns {SigridBuilder} this for chaining
-     */
-    enableWriteFileTool() {
-        this.options.enableWriteFileTool = true;
-        return this;
-    }
-
-    /**
      * Enable megawriter (write_multiple_files) tool - batch write in single turn
      * - Much faster than multi-turn write_file calls
      * - Automatically sets tool_choice to required for optimal performance
@@ -253,20 +242,6 @@ export class SigridBuilder {
             }
 
             delete finalOptions.enableMegawriter; // Remove flag, no longer needed
-        }
-        // Handle enableWriteFileTool option - merge appropriate file tools
-        else if (finalOptions.enableWriteFileTool) {
-            const customTools = finalOptions.tools || [];
-
-            if (this.mode === 'static') {
-                // Static mode: Only write_file (read via snapshot)
-                finalOptions.tools = [writeFileTool, ...customTools];
-            } else {
-                // Dynamic mode: All file tools
-                finalOptions.tools = [...fileTools, ...customTools];
-            }
-
-            delete finalOptions.enableWriteFileTool; // Remove flag, no longer needed
         }
 
         if (this.mode === 'static') {

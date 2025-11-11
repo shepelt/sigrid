@@ -6,8 +6,7 @@ import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
 import { createSnapshot } from './snapshot.js';
-import { getStaticContextPrompt, getStaticContextWithToolsPrompt, getStaticContextWithMegawriterPrompt } from './prompts.js';
-import { writeFileTool } from './filetooling.js';
+import { getStaticContextPrompt, getStaticContextWithMegawriterPrompt } from './prompts.js';
 
 /**
  * Progress event constants for workspace operations
@@ -184,8 +183,8 @@ export class Workspace {
      * @param {boolean} options.decodeHtmlEntities - Decode HTML entities in static mode output (default: false)
      * @param {boolean} options.stream - Enable streaming (static mode only, not compatible with tools)
      * @param {Function} options.streamCallback - Stream callback (static mode only): (chunk: string) => void
-     * @param {boolean} options.enableWriteFileTool - Enable write_file tool in static mode (read via snapshot, write via tool)
-     * @param {Array} options.tools - Custom tool definitions (in addition to write_file if enabled)
+     * @param {boolean} options.enableMegawriter - Enable write_multiple_files tool in static mode for batch file writing
+     * @param {Array} options.tools - Custom tool definitions
      * @param {Object|string} options.tool_choice - Tool choice: "auto", "none", "required", or {type: "auto"} (Claude format)
      * @param {Function} options.toolExecutor - Custom tool executor function (toolName, args) => Promise<result>
      * @returns {Promise<{content: string, conversationID: string, filesWritten?: Array}>}
@@ -210,7 +209,6 @@ export class Workspace {
         if (options.progressCallback) builder.progress(options.progressCallback);
 
         // Apply tool options (note: dynamic mode uses all file tools from llm-dynamic.js)
-        if (options.enableWriteFileTool) builder.enableFileTools();  // Dynamic mode gets all file tools
         if (options.tools) builder.tools(options.tools);
         if (options.tool_choice) builder.toolChoice(options.tool_choice);
 
@@ -279,18 +277,15 @@ export class Workspace {
         if (options.enableMegawriter) {
             // Megawriter mode: Batch file writing in single turn
             systemPrompt = getStaticContextWithMegawriterPrompt();
-        } else if (options.enableWriteFileTool) {
-            // Tool-based mode: Use tool-specific prompt
-            systemPrompt = getStaticContextWithToolsPrompt();
         } else {
             // XML-based mode: Traditional <sg-file> tag output
             systemPrompt = getStaticContextPrompt();
         }
 
         // Construct final options (merge user options with static mode requirements)
-        // Note: builder.execute will handle tool merging based on enableWriteFileTool flag
+        // Note: builder.execute will handle tool merging based on enableMegawriter flag
         const finalOptions = {
-            ...options,  // Keep all user options including enableWriteFileTool, tools, tool_choice
+            ...options,  // Keep all user options including enableMegawriter, tools, tool_choice
             workspace: this.path,
             instructions: [...(options.instructions || []), systemPrompt],
             prompts: ['Here is the full codebase for context:', snapshot],
