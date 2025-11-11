@@ -379,6 +379,24 @@ export async function handleWriteMultipleFiles(args = {}, progressCallback = nul
 
         for (const file of files) {
             try {
+                // Emit FILE_STREAMING_START event
+                if (progressCallback) {
+                    progressCallback('FILE_STREAMING_START', {
+                        path: file.filepath,
+                        action: 'write'
+                    });
+                }
+
+                // Emit FILE_STREAMING_CONTENT event with full content
+                // (not incremental like XML streaming, but gives UI the content)
+                if (progressCallback) {
+                    progressCallback('FILE_STREAMING_CONTENT', {
+                        path: file.filepath,
+                        content: file.content,
+                        isIncremental: false // Full content at once
+                    });
+                }
+
                 const result = await handleWriteFile(
                     {
                         filepath: file.filepath,
@@ -391,6 +409,15 @@ export async function handleWriteMultipleFiles(args = {}, progressCallback = nul
                 );
                 results.push({ ...result, filepath: file.filepath });
                 successCount++;
+
+                // Emit FILE_STREAMING_END event
+                if (progressCallback) {
+                    progressCallback('FILE_STREAMING_END', {
+                        path: file.filepath,
+                        action: 'write',
+                        fullContent: file.content
+                    });
+                }
             } catch (error) {
                 results.push({
                     ok: false,

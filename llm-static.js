@@ -203,6 +203,14 @@ export async function executeStatic(prompt, opts = {}) {
 
             toolIterations++;
 
+            // Emit tool call start event
+            if (opts.progressCallback) {
+                opts.progressCallback('TOOL_CALL_START', {
+                    iteration: toolIterations,
+                    toolCount: toolCalls.length
+                });
+            }
+
             // Add assistant message with tool calls to history
             messages.push(message);
 
@@ -245,6 +253,17 @@ export async function executeStatic(prompt, opts = {}) {
                 messages,
                 ...requestParams  // Preserve other params (tools, max_tokens, etc.)
             };
+
+            // Remove tool_choice from follow-up requests to allow LLM to decide whether to continue
+            // This prevents infinite loops where tool_choice forces the same tool to be called repeatedly
+            delete followupParams.tool_choice;
+
+            // Emit tool call end event
+            if (opts.progressCallback) {
+                opts.progressCallback('TOOL_CALL_END', {
+                    iteration: toolIterations
+                });
+            }
 
             response = await callWithRetry(apiClient, followupParams, retryConfig);
 

@@ -105,12 +105,21 @@ describe('Static Mode Integration Tests', () => {
         testFn(`should execute in static mode with auto-generated snapshot [${mode}]`, async () => {
             console.log(`\n=== Static Mode (${mode}): Auto-Generated Snapshot ===\n`);
 
+            // Track tool iterations for megawriter
+            let toolIterations = 0;
+            const progressCallback = (event, data) => {
+                if (event === 'TOOL_CALL_START') {
+                    toolIterations = data.iteration;
+                }
+            };
+
             const result = await workspace.execute(
                 'Build a simple todo app with add, complete, and delete functionality',
                 {
                     instructions: [aiRules],
                     mode: 'static',
                     model,
+                    progressCallback,
                     ...opts
                 }
             );
@@ -138,6 +147,12 @@ describe('Static Mode Integration Tests', () => {
             expect(tsxFiles.length).toBeGreaterThan(0);
             console.log(`✓ Found ${tsxFiles.length} TypeScript files on disk`);
 
+            // Assert: Megawriter should only make 1 tool call (batch write)
+            if (mode === 'Megawriter') {
+                console.log(`✓ Tool iterations: ${toolIterations}`);
+                expect(toolIterations).toBe(1);
+            }
+
             // Verify todo functionality was created
             const todoFiles = tsxFiles.filter(f =>
                 f.toLowerCase().includes('todo')
@@ -150,12 +165,21 @@ describe('Static Mode Integration Tests', () => {
         testFn(`should execute in static mode with custom snapshot config [${mode}]`, async () => {
             console.log(`\n=== Static Mode (${mode}): Custom Snapshot Config ===\n`);
 
+            // Track tool iterations for megawriter
+            let toolIterations = 0;
+            const progressCallback = (event, data) => {
+                if (event === 'TOOL_CALL_START') {
+                    toolIterations = data.iteration;
+                }
+            };
+
             const result = await workspace.execute(
                 'Add a simple header component',
                 {
                     instructions: [aiRules],
                     mode: 'static',
                     model,
+                    progressCallback,
                     snapshot: {
                         include: ['src/**/*'],
                         extensions: ['.tsx', '.ts'],
@@ -185,6 +209,12 @@ describe('Static Mode Integration Tests', () => {
                 f.toLowerCase().includes('header')
             );
             expect(headerFiles.length).toBeGreaterThan(0);
+
+            // Assert: Megawriter should only make 1 tool call (batch write)
+            if (mode === 'Megawriter') {
+                console.log(`✓ Tool iterations: ${toolIterations}`);
+                expect(toolIterations).toBe(1);
+            }
 
             console.log(`\n=== Custom Snapshot (${mode}) Test Complete ===\n`);
         }, 180000);
