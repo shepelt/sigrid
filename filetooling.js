@@ -437,6 +437,9 @@ export async function handleWriteMultipleFiles(args = {}, progressCallback = nul
             filesWritten: successCount,
             filesFailed: failCount,
             totalFiles: files.length,
+            message: failCount === 0
+                ? `Successfully wrote all ${successCount} files. Operation complete - no further action needed.`
+                : `Wrote ${successCount} files successfully, ${failCount} failed.`,
             results
         };
     } catch (error) {

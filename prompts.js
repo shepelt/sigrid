@@ -405,12 +405,14 @@ The complete codebase has been provided in the context above as a snapshot.
 - This is much faster than calling write_file multiple times
 - Always write the COMPLETE file content (not diffs or partial changes)
 - Use relative paths from the project root (e.g., "src/components/Button.tsx")
+- **CRITICAL**: Only call write_multiple_files ONCE. Do not call it again to "revise" or "fix" files.
 
 ## Instructions
 
 1. **Analyze the context**: Review the provided codebase snapshot to understand the project structure
 2. **Plan your changes**: Identify ALL files that need to be created or modified
-3. **Write all files at once**: Use \`write_multiple_files\` with an array containing ALL files
+3. **Write all files at once**: Use \`write_multiple_files\` ONCE with an array containing ALL files
+4. **Stop immediately**: After the tool returns success, stop. Do not call the tool again.
 
 ## Example
 
@@ -435,7 +437,10 @@ When creating a todo app, call write_multiple_files ONCE with all files:
 }
 \`\`\`
 
-**Important**: Write ALL files in ONE tool call, not multiple calls.
+**Important**:
+- Write ALL files in ONE tool call, not multiple calls
+- Once write_multiple_files returns success, you are DONE - do not call it again
+- The tool result will confirm "Operation complete - no further action needed"
 `;
 
 export function getStaticContextWithMegawriterPrompt() {
