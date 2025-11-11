@@ -1,8 +1,39 @@
 import { randomBytes } from "crypto";
 import { getClient } from "./llm-client.js";
 import { extractTokenUsage, estimateTokens } from "./token-utils.js";
+import { executeFileTool } from "./filetooling.js";
 
 const DEFAULT_MODEL = "gpt-5-mini";
+
+/**
+ * Convert tool definition to OpenAI chat.completions format
+ * Handles both formats:
+ * - Already wrapped: {type: "function", function: {name, description, parameters}}
+ * - Unwrapped: {type: "function", name, description, parameters}
+ * @param {Object} tool - Tool definition
+ * @returns {Object} Tool in OpenAI format
+ */
+function normalizeToolFormat(tool) {
+    // Already in correct format
+    if (tool.function && tool.function.name) {
+        return tool;
+    }
+
+    // Convert from filetooling.js format to chat.completions format
+    if (tool.name && tool.parameters) {
+        return {
+            type: "function",
+            function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters
+            }
+        };
+    }
+
+    // Unknown format, return as-is
+    return tool;
+}
 
 /**
  * Generate a unique conversation ID
@@ -13,7 +44,7 @@ function generateConversationID() {
 }
 
 /**
- * Execute static LLM inference (no tooling, no server-side conversation API)
+ * Execute static LLM inference with optional tool calling
  * Uses OpenAI chat completions API with optional internal conversation tracking
  *
  * @param {string} prompt - User prompt
@@ -26,8 +57,13 @@ function generateConversationID() {
  * @param {string} opts.conversationID - Existing conversation ID
  * @param {ConversationPersistence} opts.conversationPersistence - Persistence provider for internal conversation tracking
  * @param {boolean} opts.saveAssistantMessage - Whether to save assistant message to persistence (default: true)
- * @param {boolean} opts.stream - Enable streaming output (default: false)
+ * @param {boolean} opts.stream - Enable streaming output (default: false, not supported with tools)
  * @param {Function} opts.streamCallback - Callback for streaming chunks: (chunk: string) => void
+ * @param {Array} opts.tools - Array of tool definitions (OpenAI format)
+ * @param {Object|string} opts.tool_choice - Tool choice: "auto", "none", "required", or {type: "auto"} (Claude format)
+ * @param {Function} opts.toolExecutor - Custom tool executor function (toolName, args) => Promise<result>. Defaults to executeFileTool for file tools.
+ * @param {string} opts.workspace - Workspace path for tool execution (passed to toolExecutor)
+ * @param {Function} opts.progressCallback - Progress callback for tool execution
  * @param {Object} opts.responseFormat - Response format for structured outputs (e.g., { type: "json_object" } or { type: "json_schema", json_schema: {...} })
  * @param {boolean} opts.retry - Enable retry on rate limit errors (default: true)
  * @param {number} opts.maxRetries - Maximum number of retry attempts (default: 2)
@@ -115,7 +151,12 @@ export async function executeStatic(prompt, opts = {}) {
         newMessages.push(userMessage);
     }
 
-    // Non-streaming mode
+    // Tool calling not supported with streaming
+    if (opts.stream && opts.tools && opts.tools.length > 0) {
+        throw new Error('Streaming is not supported with tool calling. Use non-streaming mode or disable tools.');
+    }
+
+    // Non-streaming mode (with optional tool calling)
     if (!opts.stream) {
         const requestParams = {
             model,
@@ -130,17 +171,93 @@ export async function executeStatic(prompt, opts = {}) {
         if (opts.presence_penalty !== undefined) requestParams.presence_penalty = opts.presence_penalty;
         if (opts.stop !== undefined) requestParams.stop = opts.stop;
 
-        // Add responseFormat if provided
+        // Add tools if provided (normalize format)
+        if (opts.tools && opts.tools.length > 0) {
+            requestParams.tools = opts.tools.map(normalizeToolFormat);
+            if (opts.tool_choice !== undefined) {
+                requestParams.tool_choice = opts.tool_choice;
+            }
+        }
+
+        // Add responseFormat if provided (not compatible with tools)
         if (opts.responseFormat) {
             requestParams.response_format = opts.responseFormat;
         }
 
-        const response = await callWithRetry(apiClient, requestParams, retryConfig);
+        let response = await callWithRetry(apiClient, requestParams, retryConfig);
+        let totalTokenCount = extractTokenUsage(response);
+
+        // Tool calling loop
+        const toolExecutor = opts.toolExecutor || executeFileTool;
+        const maxToolIterations = 10; // Prevent infinite loops
+        let toolIterations = 0;
+
+        while (toolIterations < maxToolIterations) {
+            const message = response.choices[0]?.message;
+            const toolCalls = message?.tool_calls;
+
+            if (!toolCalls || toolCalls.length === 0) {
+                // No more tool calls, we're done
+                break;
+            }
+
+            toolIterations++;
+
+            // Add assistant message with tool calls to history
+            messages.push(message);
+
+            // Execute each tool call
+            for (const toolCall of toolCalls) {
+                try {
+                    const toolName = toolCall.function.name;
+                    const toolArgs = JSON.parse(toolCall.function.arguments || "{}");
+
+                    // Execute tool
+                    const toolResult = await toolExecutor(
+                        toolName,
+                        toolArgs,
+                        opts.progressCallback,
+                        opts.workspace
+                    );
+
+                    // Add tool result to messages
+                    messages.push({
+                        role: "tool",
+                        tool_call_id: toolCall.id,
+                        content: JSON.stringify(toolResult)
+                    });
+                } catch (err) {
+                    // Add error result
+                    messages.push({
+                        role: "tool",
+                        tool_call_id: toolCall.id,
+                        content: JSON.stringify({
+                            ok: false,
+                            error: String(err?.message || err)
+                        })
+                    });
+                }
+            }
+
+            // Make follow-up request with tool results
+            const followupParams = {
+                model,
+                messages,
+                ...requestParams  // Preserve other params (tools, max_tokens, etc.)
+            };
+
+            response = await callWithRetry(apiClient, followupParams, retryConfig);
+
+            // Accumulate token usage
+            const followupTokens = extractTokenUsage(response);
+            if (totalTokenCount && followupTokens) {
+                totalTokenCount.promptTokens += followupTokens.promptTokens;
+                totalTokenCount.completionTokens += followupTokens.completionTokens;
+                totalTokenCount.totalTokens += followupTokens.totalTokens;
+            }
+        }
 
         const content = response.choices[0]?.message?.content || "";
-
-        // Extract token usage from response
-        const tokenCount = extractTokenUsage(response);
 
         // Save assistant response to persistence for internal tracking
         if (useInternalConversations) {
@@ -163,8 +280,8 @@ export async function executeStatic(prompt, opts = {}) {
         };
 
         // Add token count if available
-        if (tokenCount) {
-            result.tokenCount = tokenCount;
+        if (totalTokenCount) {
+            result.tokenCount = totalTokenCount;
         }
 
         return result;

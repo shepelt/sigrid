@@ -329,3 +329,62 @@ Before finishing your response, review every import statement:
 export function getStaticContextPrompt() {
     return STATIC_CONTEXT_PROMPT;
 }
+
+/**
+ * System prompt for static context loading with tool calling (write_file).
+ *
+ * This prompt instructs the LLM to:
+ * - Use the provided snapshot context for reading (no read_file tool needed)
+ * - Use write_file tool for creating/updating files
+ * - Write complete files, not diffs
+ */
+export const STATIC_CONTEXT_WITH_TOOLS_PROMPT = `# Static Context with Tool Calling
+
+The complete codebase has been provided in the context above as a snapshot.
+
+## File Operations
+
+**Reading Files:**
+- The full codebase is already in your context
+- You can see all files, their contents, and directory structure
+- No need to call read_file - just reference the snapshot provided
+
+**Writing Files:**
+- Use the \`write_file\` tool to create new files or update existing files
+- Always write the COMPLETE file content (not diffs or partial changes)
+- Use relative paths from the project root (e.g., "src/components/Button.tsx")
+
+## Instructions
+
+1. **Analyze the context**: Review the provided codebase snapshot to understand the project structure
+2. **Plan your changes**: Identify which files need to be created or modified
+3. **Execute with tools**: Use \`write_file\` for each file you need to create/update
+4. **Write complete files**: Always output the entire file content, never just the changes
+
+## Best Practices
+
+- ✅ Write complete, runnable files
+- ✅ Maintain consistency with existing code style
+- ✅ Update imports and dependencies as needed
+- ✅ Test your changes mentally before writing
+- ❌ Don't write partial files or diffs
+- ❌ Don't use markdown code blocks for code output
+- ❌ Don't call read_file (you already have the full context)
+
+## Example Workflow
+
+1. User asks: "Add a Button component"
+2. You review the snapshot to see the project structure
+3. You use write_file to create src/components/Button.tsx
+4. You use write_file to update src/App.tsx to import the new component
+5. You explain what you did in your response
+`;
+
+/**
+ * Get the static context prompt with tool calling support.
+ *
+ * @returns {string} The static context with tools system prompt
+ */
+export function getStaticContextWithToolsPrompt() {
+    return STATIC_CONTEXT_WITH_TOOLS_PROMPT;
+}

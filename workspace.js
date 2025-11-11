@@ -6,7 +6,8 @@ import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
 import { createSnapshot } from './snapshot.js';
-import { getStaticContextPrompt } from './prompts.js';
+import { getStaticContextPrompt, getStaticContextWithToolsPrompt } from './prompts.js';
+import { writeFileTool } from './filetooling.js';
 
 /**
  * Progress event constants for workspace operations
@@ -179,8 +180,12 @@ export class Workspace {
      * @param {string} options.mode - Execution mode ('static' for static context loading)
      * @param {Object|string} options.snapshot - Snapshot config or pre-computed snapshot string
      * @param {boolean} options.decodeHtmlEntities - Decode HTML entities in static mode output (default: false)
-     * @param {boolean} options.stream - Enable streaming (static mode only)
+     * @param {boolean} options.stream - Enable streaming (static mode only, not compatible with tools)
      * @param {Function} options.streamCallback - Stream callback (static mode only): (chunk: string) => void
+     * @param {boolean} options.enableWriteFileTool - Enable write_file tool in static mode (read via snapshot, write via tool)
+     * @param {Array} options.tools - Custom tool definitions (in addition to write_file if enabled)
+     * @param {Object|string} options.tool_choice - Tool choice: "auto", "none", "required", or {type: "auto"} (Claude format)
+     * @param {Function} options.toolExecutor - Custom tool executor function (toolName, args) => Promise<result>
      * @returns {Promise<{content: string, conversationID: string, filesWritten?: Array}>}
      */
     async execute(prompt, options = {}) {
@@ -201,6 +206,11 @@ export class Workspace {
         if (options.pure) builder.pure();
         if (options.conversation) builder.conversation();
         if (options.progressCallback) builder.progress(options.progressCallback);
+
+        // Apply tool options (note: dynamic mode uses all file tools from llm-dynamic.js)
+        if (options.enableWriteFileTool) builder.enableFileTools();  // Dynamic mode gets all file tools
+        if (options.tools) builder.tools(options.tools);
+        if (options.tool_choice) builder.toolChoice(options.tool_choice);
 
         return await builder.execute(prompt, options);
     }
@@ -261,20 +271,32 @@ export class Workspace {
             };
         }
 
+        // Smart prompt selection based on tool usage
+        let systemPrompt;
+
+        if (options.enableWriteFileTool) {
+            // Tool-based mode: Use tool-specific prompt
+            systemPrompt = getStaticContextWithToolsPrompt();
+        } else {
+            // XML-based mode: Traditional <sg-file> tag output
+            systemPrompt = getStaticContextPrompt();
+        }
+
         // Construct final options (merge user options with static mode requirements)
+        // Note: builder.execute will handle tool merging based on enableWriteFileTool flag
         const finalOptions = {
-            ...options,  // Keep all user options (temperature, reasoningEffort, conversationID, conversationPersistence, etc.)
+            ...options,  // Keep all user options including enableWriteFileTool, tools, tool_choice
             workspace: this.path,
-            instructions: [...(options.instructions || []), getStaticContextPrompt()],
+            instructions: [...(options.instructions || []), systemPrompt],
             prompts: ['Here is the full codebase for context:', snapshot],
             saveAssistantMessage: false,  // We'll save compact version ourselves
-            streamCallback  // Use wrapped callback if streaming
+            streamCallback,  // Use wrapped callback if streaming
             // Note: conversationPersistence is optional
             // - If provided: uses internal tracking (efficient, fresh snapshots)
             // - If not provided: not supported in static mode (no server-side conversations)
-        };
+        }
 
-        // Use builder with static mode (uses llm-static.js - no tooling, supports streaming)
+        // Use builder with static mode (uses llm-static.js - supports streaming or tool calling)
         const builder = new SigridBuilder();
         builder.static();  // Explicitly use static mode
 

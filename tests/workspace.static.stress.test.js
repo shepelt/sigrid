@@ -642,4 +642,57 @@ export function parseXml(input: string): string {
         // Verify all successful runs wrote files
         expect(results.successful).toBeGreaterThan(0);
     }, 600000); // 10 min timeout for 10 iterations
+
+    // Parametrized stress test - run in both XML and Tool modes
+    describe.each([
+        { mode: 'XML', opts: { max_tokens: 8192 } },
+        { mode: 'Tool', opts: { enableWriteFileTool: true, tool_choice: { type: "auto" }, max_tokens: 8192 } }
+    ])('Multi-file Stress Test - $mode mode', ({ mode, opts }) => {
+
+        testFn(`stress test: many files output [${mode}]`, async () => {
+            console.log(`\n=== Stress Test (${mode}): Many Files Output ===\n`);
+
+            const result = await workspace.execute(
+                'Create 10 simple utility functions, each in their own file in src/utils/',
+                {
+                    instructions: [aiRules],
+                    mode: 'static',
+                    model,
+                    snapshot: {
+                        include: ['src/**/*'],
+                        extensions: ['.ts', '.tsx']
+                    },
+                    ...opts
+                }
+            );
+
+            // Verify files were created on disk
+            const allFiles = await fs.readdir(workspace.path, { recursive: true });
+            const utilFiles = allFiles.filter(f =>
+                (f.endsWith('.ts') || f.endsWith('.tsx')) &&
+                f.includes('util')
+            );
+
+            console.log(`\n✓ Found ${utilFiles.length} utility files`);
+
+            expect(utilFiles.length).toBeGreaterThan(0);
+
+            // Verify all files have content
+            for (const relPath of utilFiles) {
+                const fullPath = path.join(workspace.path, relPath);
+                const content = await fs.readFile(fullPath, 'utf-8');
+                expect(content.length).toBeGreaterThan(0);
+            }
+
+            // Verify the generated code builds successfully
+            console.log('\n✓ All files written, running build...');
+            execSync('npm run build', {
+                cwd: workspace.path,
+                stdio: 'inherit'
+            });
+            console.log('✓ Build passed');
+
+            console.log(`\n=== Many Files Output (${mode}) Test Complete ===\n`);
+        }, 300000);
+    });
 });

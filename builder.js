@@ -1,5 +1,6 @@
 import { execute as executeDynamic } from './llm-dynamic.js';
 import { executeStatic } from './llm-static.js';
+import { fileTools, writeFileTool } from './filetooling.js';
 
 /**
  * Fluent builder for Sigrid LLM execution
@@ -156,8 +157,42 @@ export class SigridBuilder {
     }
 
     /**
-     * Use static mode (no tooling, uses chat.completions API)
-     * Static mode is the default. Supports streaming.
+     * Enable built-in write_file tool
+     * - In static mode: Only write_file (read via snapshot)
+     * - In dynamic mode: All file tools (read_file, write_file, list_dir)
+     * @returns {SigridBuilder} this for chaining
+     */
+    enableWriteFileTool() {
+        this.options.enableWriteFileTool = true;
+        return this;
+    }
+
+    /**
+     * Add custom tools (in addition to or instead of file tools)
+     * @param {Array} toolsArray - Array of tool definitions
+     * @returns {SigridBuilder} this for chaining
+     */
+    tools(toolsArray) {
+        if (!Array.isArray(toolsArray)) {
+            throw new Error('tools() requires an array of tool definitions');
+        }
+        this.options.tools = toolsArray;
+        return this;
+    }
+
+    /**
+     * Set tool choice strategy
+     * @param {string|Object} choice - "auto", "none", "required", or {type: "auto"} for Claude
+     * @returns {SigridBuilder} this for chaining
+     */
+    toolChoice(choice) {
+        this.options.tool_choice = choice;
+        return this;
+    }
+
+    /**
+     * Use static mode (supports streaming and tool calling)
+     * Static mode is the default. Supports streaming (without tools) or tool calling (without streaming).
      * @returns {SigridBuilder} this for chaining
      */
     static() {
@@ -194,6 +229,21 @@ export class SigridBuilder {
      */
     async execute(prompt, additionalOpts = {}) {
         const finalOptions = { ...this.options, ...additionalOpts };
+
+        // Handle enableWriteFileTool option - merge appropriate file tools
+        if (finalOptions.enableWriteFileTool) {
+            const customTools = finalOptions.tools || [];
+
+            if (this.mode === 'static') {
+                // Static mode: Only write_file (read via snapshot)
+                finalOptions.tools = [writeFileTool, ...customTools];
+            } else {
+                // Dynamic mode: All file tools
+                finalOptions.tools = [...fileTools, ...customTools];
+            }
+
+            delete finalOptions.enableWriteFileTool; // Remove flag, no longer needed
+        }
 
         if (this.mode === 'static') {
             return executeStatic(prompt, finalOptions);
