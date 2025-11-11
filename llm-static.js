@@ -331,9 +331,12 @@ export async function executeStatic(prompt, opts = {}) {
     // Always accumulate chunks for token estimation and optional persistence
     let fullContent = "";
     let usageData = null;
+    let toolCalls = [];
+    let currentToolCall = null;
 
     for await (const chunk of stream) {
-        const text = chunk.choices[0]?.delta?.content || '';
+        const delta = chunk.choices[0]?.delta;
+        const text = delta?.content || '';
 
         if (text) {
             // Accumulate all content (needed for token estimation)
@@ -345,9 +348,111 @@ export async function executeStatic(prompt, opts = {}) {
             }
         }
 
+        // Handle tool calls in streaming mode
+        if (delta?.tool_calls) {
+            for (const toolCallDelta of delta.tool_calls) {
+                const index = toolCallDelta.index;
+
+                // Start new tool call or continue existing one
+                if (!toolCalls[index]) {
+                    toolCalls[index] = {
+                        id: toolCallDelta.id || '',
+                        type: toolCallDelta.type || 'function',
+                        function: {
+                            name: toolCallDelta.function?.name || '',
+                            arguments: toolCallDelta.function?.arguments || ''
+                        }
+                    };
+                } else {
+                    // Accumulate function arguments
+                    if (toolCallDelta.function?.arguments) {
+                        toolCalls[index].function.arguments += toolCallDelta.function.arguments;
+                    }
+                    if (toolCallDelta.function?.name) {
+                        toolCalls[index].function.name += toolCallDelta.function.name;
+                    }
+                }
+            }
+        }
+
         // Extract usage data from final chunk (OpenAI streaming)
         if (chunk.usage) {
             usageData = chunk.usage;
+        }
+    }
+
+    // If we got tool calls in streaming mode, execute them
+    // This converts streaming to non-streaming for tool execution
+    if (toolCalls.length > 0 && opts.toolExecutor) {
+        // Add assistant message with tool calls to conversation
+        const assistantMessage = {
+            role: "assistant",
+            content: fullContent,
+            tool_calls: toolCalls
+        };
+        messages.push(assistantMessage);
+
+        // Execute each tool call
+        for (const toolCall of toolCalls) {
+            try {
+                const toolName = toolCall.function.name;
+                const toolArgs = JSON.parse(toolCall.function.arguments || "{}");
+
+                // Execute tool
+                const toolResult = await opts.toolExecutor(
+                    toolName,
+                    toolArgs,
+                    opts.progressCallback,
+                    opts.workspace
+                );
+
+                // Add tool result to messages
+                messages.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify(toolResult)
+                });
+            } catch (err) {
+                // Add error result
+                messages.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify({
+                        ok: false,
+                        error: String(err?.message || err)
+                    })
+                });
+            }
+        }
+
+        // After tool execution, make a non-streaming follow-up request for the final response
+        const followupParams = {
+            model,
+            messages,
+            stream: false
+        };
+
+        // Pass through API parameters but remove tools to avoid infinite loops
+        if (opts.max_tokens !== undefined) followupParams.max_tokens = opts.max_tokens;
+        if (opts.temperature !== undefined) followupParams.temperature = opts.temperature;
+
+        const followupResponse = await callWithRetry(apiClient, followupParams, retryConfig);
+        const followupContent = followupResponse.choices[0]?.message?.content || '';
+
+        // Stream the followup content if callback provided
+        if (opts.streamCallback && followupContent) {
+            opts.streamCallback(followupContent);
+        }
+
+        // Update fullContent with followup
+        fullContent = followupContent;
+
+        // Update usage data
+        const followupUsage = extractTokenUsage(followupResponse);
+        if (usageData && followupUsage) {
+            usageData.prompt_tokens += followupUsage.promptTokens;
+            usageData.completion_tokens += followupUsage.completionTokens;
+            usageData.total_tokens += followupUsage.totalTokens;
         }
     }
 
