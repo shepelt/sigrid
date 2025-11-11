@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
 import { createSnapshot } from './snapshot.js';
-import { getStaticContextPrompt, getStaticContextWithToolsPrompt } from './prompts.js';
+import { getStaticContextPrompt, getStaticContextWithToolsPrompt, getStaticContextWithMegawriterPrompt } from './prompts.js';
 import { writeFileTool } from './filetooling.js';
 
 /**
@@ -274,7 +274,10 @@ export class Workspace {
         // Smart prompt selection based on tool usage
         let systemPrompt;
 
-        if (options.enableWriteFileTool) {
+        if (options.enableMegawriter) {
+            // Megawriter mode: Batch file writing in single turn
+            systemPrompt = getStaticContextWithMegawriterPrompt();
+        } else if (options.enableWriteFileTool) {
             // Tool-based mode: Use tool-specific prompt
             systemPrompt = getStaticContextWithToolsPrompt();
         } else {

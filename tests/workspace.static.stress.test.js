@@ -643,10 +643,10 @@ export function parseXml(input: string): string {
         expect(results.successful).toBeGreaterThan(0);
     }, 600000); // 10 min timeout for 10 iterations
 
-    // Parametrized stress test - run in both XML and Tool modes
+    // Parametrized stress test - run in both XML and Megawriter modes
     describe.each([
         { mode: 'XML', opts: { max_tokens: 8192 } },
-        { mode: 'Tool', opts: { enableWriteFileTool: true, tool_choice: { type: "auto" }, max_tokens: 8192 } }
+        { mode: 'Megawriter', opts: { enableMegawriter: true, max_tokens: 8192 } }
     ])('Multi-file Stress Test - $mode mode', ({ mode, opts }) => {
 
         testFn(`stress test: many files output [${mode}]`, async () => {

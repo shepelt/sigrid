@@ -1,6 +1,6 @@
 import { execute as executeDynamic } from './llm-dynamic.js';
 import { executeStatic } from './llm-static.js';
-import { fileTools, writeFileTool } from './filetooling.js';
+import { fileTools, writeFileTool, megaWriterTool } from './filetooling.js';
 
 /**
  * Fluent builder for Sigrid LLM execution
@@ -168,6 +168,18 @@ export class SigridBuilder {
     }
 
     /**
+     * Enable megawriter (write_multiple_files) tool - batch write in single turn
+     * - Much faster than multi-turn write_file calls
+     * - Automatically sets tool_choice to required for optimal performance
+     * - Best for creating multiple files at once
+     * @returns {SigridBuilder} this for chaining
+     */
+    enableMegawriter() {
+        this.options.enableMegawriter = true;
+        return this;
+    }
+
+    /**
      * Add custom tools (in addition to or instead of file tools)
      * @param {Array} toolsArray - Array of tool definitions
      * @returns {SigridBuilder} this for chaining
@@ -230,8 +242,20 @@ export class SigridBuilder {
     async execute(prompt, additionalOpts = {}) {
         const finalOptions = { ...this.options, ...additionalOpts };
 
+        // Handle enableMegawriter option - batch file writing in single turn
+        if (finalOptions.enableMegawriter) {
+            const customTools = finalOptions.tools || [];
+            finalOptions.tools = [megaWriterTool, ...customTools];
+
+            // Set tool_choice to required for optimal performance (skip LLM thinking time)
+            if (!finalOptions.tool_choice) {
+                finalOptions.tool_choice = { type: "tool", name: "write_multiple_files" };
+            }
+
+            delete finalOptions.enableMegawriter; // Remove flag, no longer needed
+        }
         // Handle enableWriteFileTool option - merge appropriate file tools
-        if (finalOptions.enableWriteFileTool) {
+        else if (finalOptions.enableWriteFileTool) {
             const customTools = finalOptions.tools || [];
 
             if (this.mode === 'static') {

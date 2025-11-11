@@ -388,3 +388,56 @@ The complete codebase has been provided in the context above as a snapshot.
 export function getStaticContextWithToolsPrompt() {
     return STATIC_CONTEXT_WITH_TOOLS_PROMPT;
 }
+
+export const STATIC_CONTEXT_WITH_MEGAWRITER_PROMPT = `# Static Context with Batch File Writing
+
+The complete codebase has been provided in the context above as a snapshot.
+
+## File Operations
+
+**Reading Files:**
+- The full codebase is already in your context
+- You can see all files, their contents, and directory structure
+- No need to call read_file - just reference the snapshot provided
+
+**Writing Files:**
+- Use the \`write_multiple_files\` tool to create/update ALL files in a SINGLE call
+- This is much faster than calling write_file multiple times
+- Always write the COMPLETE file content (not diffs or partial changes)
+- Use relative paths from the project root (e.g., "src/components/Button.tsx")
+
+## Instructions
+
+1. **Analyze the context**: Review the provided codebase snapshot to understand the project structure
+2. **Plan your changes**: Identify ALL files that need to be created or modified
+3. **Write all files at once**: Use \`write_multiple_files\` with an array containing ALL files
+
+## Example
+
+When creating a todo app, call write_multiple_files ONCE with all files:
+
+\`\`\`json
+{
+  "files": [
+    {
+      "filepath": "src/components/TodoList.tsx",
+      "content": "import React from 'react';\n\nexport default function TodoList() { ... }"
+    },
+    {
+      "filepath": "src/components/TodoItem.tsx",
+      "content": "import React from 'react';\n\nexport default function TodoItem() { ... }"
+    },
+    {
+      "filepath": "src/App.tsx",
+      "content": "import TodoList from './components/TodoList';\n..."
+    }
+  ]
+}
+\`\`\`
+
+**Important**: Write ALL files in ONE tool call, not multiple calls.
+`;
+
+export function getStaticContextWithMegawriterPrompt() {
+    return STATIC_CONTEXT_WITH_MEGAWRITER_PROMPT;
+}

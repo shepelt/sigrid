@@ -96,10 +96,10 @@ describe('Static Mode Integration Tests', () => {
         });
     }
 
-    // Parametrized file creation tests - run in both XML and Tool modes
+    // Parametrized file creation tests - run in both XML and Megawriter modes
     describe.each([
         { mode: 'XML', opts: { max_tokens: 4096 } },
-        { mode: 'Tool', opts: { enableWriteFileTool: true, tool_choice: { type: "auto" }, max_tokens: 4096 } }
+        { mode: 'Megawriter', opts: { enableMegawriter: true, max_tokens: 8192 } }
     ])('File Creation Tests - $mode mode', ({ mode, opts }) => {
 
         testFn(`should execute in static mode with auto-generated snapshot [${mode}]`, async () => {
@@ -228,7 +228,7 @@ describe('Static Mode Integration Tests', () => {
 
     describe.each([
         { mode: 'XML', opts: { max_tokens: 2048 } },
-        { mode: 'Tool', opts: { enableWriteFileTool: true, tool_choice: { type: "auto" }, max_tokens: 2048 } }
+        { mode: 'Megawriter', opts: { enableMegawriter: true, max_tokens: 4096 } }
     ])('File Metadata Tests - $mode mode', ({ mode, opts }) => {
 
         testFn(`should handle file creation with correct metadata [${mode}]`, async () => {

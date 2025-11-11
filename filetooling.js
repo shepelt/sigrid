@@ -73,6 +73,31 @@ export const writeFileTool = {
     }
 };
 
+export const megaWriterTool = {
+    type: "function",
+    name: "write_multiple_files",
+    description:
+        "Write multiple UTF-8 text files in a single call. Use this to write all files at once instead of calling write_file multiple times. Much faster for creating multiple files.",
+    parameters: {
+        type: "object",
+        properties: {
+            files: {
+                type: "array",
+                description: "Array of files to write",
+                items: {
+                    type: "object",
+                    properties: {
+                        filepath: { type: "string", description: "Relative path from project root" },
+                        content: { type: "string", description: "UTF-8 text content to write" }
+                    },
+                    required: ["filepath", "content"]
+                }
+            }
+        },
+        required: ["files"]
+    }
+};
+
 // Utility functions
 export function setSandboxRoot(root) {
     sandboxRootPath = path.resolve(root);
@@ -337,6 +362,62 @@ export async function handleWriteFile(args = {}, progressCallback = null, worksp
     }
 }
 
+// Handler for megawriter (write multiple files in single call)
+export async function handleWriteMultipleFiles(args = {}, progressCallback = null, workspacePath = null) {
+    try {
+        if (progressCallback) progressCallback('start', 'Writing multiple files...');
+
+        const { files = [] } = args;
+
+        if (!Array.isArray(files)) {
+            throw new Error("'files' must be an array");
+        }
+
+        const results = [];
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const file of files) {
+            try {
+                const result = await handleWriteFile(
+                    {
+                        filepath: file.filepath,
+                        content: file.content,
+                        mode: "overwrite",
+                        mkdirp: true
+                    },
+                    null, // No individual progress callbacks
+                    workspacePath
+                );
+                results.push({ ...result, filepath: file.filepath });
+                successCount++;
+            } catch (error) {
+                results.push({
+                    ok: false,
+                    filepath: file.filepath,
+                    error: error.message
+                });
+                failCount++;
+            }
+        }
+
+        if (progressCallback) {
+            progressCallback('succeed', `Wrote ${successCount} files (${failCount} failed)`);
+        }
+
+        return {
+            ok: failCount === 0,
+            filesWritten: successCount,
+            filesFailed: failCount,
+            totalFiles: files.length,
+            results
+        };
+    } catch (error) {
+        if (progressCallback) progressCallback('fail', `Error writing files: ${error.message}`);
+        throw error;
+    }
+}
+
 // Tool execution dispatcher
 export async function executeFileTool(toolName, args, progressCallback = null, workspacePath = null) {
     switch (toolName) {
@@ -346,6 +427,8 @@ export async function executeFileTool(toolName, args, progressCallback = null, w
             return await handleListDir(args, progressCallback, workspacePath);
         case "write_file":
             return await handleWriteFile(args, progressCallback, workspacePath);
+        case "write_multiple_files":
+            return await handleWriteMultipleFiles(args, progressCallback, workspacePath);
         default:
             throw new Error(`Unknown tool: ${toolName}`);
     }
