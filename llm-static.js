@@ -151,11 +151,6 @@ export async function executeStatic(prompt, opts = {}) {
         newMessages.push(userMessage);
     }
 
-    // Tool calling not supported with streaming
-    if (opts.stream && opts.tools && opts.tools.length > 0) {
-        throw new Error('Streaming is not supported with tool calling. Use non-streaming mode or disable tools.');
-    }
-
     // Non-streaming mode (with optional tool calling)
     if (!opts.stream) {
         const requestParams = {
