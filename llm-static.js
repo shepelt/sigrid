@@ -273,6 +273,13 @@ export async function executeStatic(prompt, opts = {}) {
 
         const content = response.choices[0]?.message?.content || "";
 
+        // Simulate streaming for non-streaming mode with tools (e.g., megawriter)
+        // This provides consistent UX regardless of whether tools are used
+        // Call streamCallback with the final content if provided
+        if (opts.streamCallback && content) {
+            opts.streamCallback(content);
+        }
+
         // Save assistant response to persistence for internal tracking
         if (useInternalConversations) {
             const saveAssistant = opts.saveAssistantMessage !== false; // Default to true
@@ -296,6 +303,11 @@ export async function executeStatic(prompt, opts = {}) {
         // Add token count if available
         if (totalTokenCount) {
             result.tokenCount = totalTokenCount;
+        }
+
+        // Pass through simulated streaming flag for event emission
+        if (opts._simulateStreaming) {
+            result._simulateStreaming = true;
         }
 
         return result;

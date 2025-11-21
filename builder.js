@@ -249,6 +249,12 @@ export class SigridBuilder {
                     : { type: "function", function: { name: "write_multiple_files" } };
             }
 
+            // Tools require non-streaming API calls, but we want streaming UX
+            // Force stream: false and simulate streaming via events + callbacks
+            // Save original stream value for workspace.js to know we want streaming events
+            finalOptions._simulateStreaming = finalOptions.stream === true;
+            finalOptions.stream = false;
+
             delete finalOptions.enableMegawriter; // Remove flag, no longer needed
         }
 

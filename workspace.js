@@ -323,9 +323,18 @@ export class Workspace {
 
         const result = await builder.execute(prompt, finalOptions);
 
+        // Determine if we should emit streaming events
+        // Use streaming events if either:
+        // 1. Actual streaming was used (options.stream)
+        // 2. Simulated streaming was used (result._simulateStreaming from megawriter)
+        const useStreamingEvents = options.stream || result._simulateStreaming;
+
         if (progressCallback) {
-            progressCallback(options.stream ? ProgressEvents.RESPONSE_STREAMED : ProgressEvents.RESPONSE_RECEIVED);
+            progressCallback(useStreamingEvents ? ProgressEvents.RESPONSE_STREAMED : ProgressEvents.RESPONSE_RECEIVED);
         }
+
+        // Clean up internal flag
+        delete result._simulateStreaming;
 
         // Get content from either accumulated chunks (streaming) or result (non-streaming)
         const fullContent = options.stream ? accumulatedContent : result.content;
