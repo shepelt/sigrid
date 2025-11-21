@@ -1,8 +1,39 @@
 import { randomBytes } from "crypto";
 import { getClient } from "./llm-client.js";
 import { extractTokenUsage, estimateTokens } from "./token-utils.js";
+import { executeFileTool } from "./filetooling.js";
 
 const DEFAULT_MODEL = "gpt-5-mini";
+
+/**
+ * Convert tool definition to OpenAI chat.completions format
+ * Handles both formats:
+ * - Already wrapped: {type: "function", function: {name, description, parameters}}
+ * - Unwrapped: {type: "function", name, description, parameters}
+ * @param {Object} tool - Tool definition
+ * @returns {Object} Tool in OpenAI format
+ */
+function normalizeToolFormat(tool) {
+    // Already in correct format
+    if (tool.function && tool.function.name) {
+        return tool;
+    }
+
+    // Convert from filetooling.js format to chat.completions format
+    if (tool.name && tool.parameters) {
+        return {
+            type: "function",
+            function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters
+            }
+        };
+    }
+
+    // Unknown format, return as-is
+    return tool;
+}
 
 /**
  * Generate a unique conversation ID
@@ -13,7 +44,7 @@ function generateConversationID() {
 }
 
 /**
- * Execute static LLM inference (no tooling, no server-side conversation API)
+ * Execute static LLM inference with optional tool calling
  * Uses OpenAI chat completions API with optional internal conversation tracking
  *
  * @param {string} prompt - User prompt
@@ -26,8 +57,13 @@ function generateConversationID() {
  * @param {string} opts.conversationID - Existing conversation ID
  * @param {ConversationPersistence} opts.conversationPersistence - Persistence provider for internal conversation tracking
  * @param {boolean} opts.saveAssistantMessage - Whether to save assistant message to persistence (default: true)
- * @param {boolean} opts.stream - Enable streaming output (default: false)
+ * @param {boolean} opts.stream - Enable streaming output (default: false, not supported with tools)
  * @param {Function} opts.streamCallback - Callback for streaming chunks: (chunk: string) => void
+ * @param {Array} opts.tools - Array of tool definitions (OpenAI format)
+ * @param {Object|string} opts.tool_choice - Tool choice: "auto", "none", "required", or {type: "auto"} (Claude format)
+ * @param {Function} opts.toolExecutor - Custom tool executor function (toolName, args) => Promise<result>. Defaults to executeFileTool for file tools.
+ * @param {string} opts.workspace - Workspace path for tool execution (passed to toolExecutor)
+ * @param {Function} opts.progressCallback - Progress callback for tool execution
  * @param {Object} opts.responseFormat - Response format for structured outputs (e.g., { type: "json_object" } or { type: "json_schema", json_schema: {...} })
  * @param {boolean} opts.retry - Enable retry on rate limit errors (default: true)
  * @param {number} opts.maxRetries - Maximum number of retry attempts (default: 2)
@@ -115,7 +151,7 @@ export async function executeStatic(prompt, opts = {}) {
         newMessages.push(userMessage);
     }
 
-    // Non-streaming mode
+    // Non-streaming mode (with optional tool calling)
     if (!opts.stream) {
         const requestParams = {
             model,
@@ -130,17 +166,112 @@ export async function executeStatic(prompt, opts = {}) {
         if (opts.presence_penalty !== undefined) requestParams.presence_penalty = opts.presence_penalty;
         if (opts.stop !== undefined) requestParams.stop = opts.stop;
 
-        // Add responseFormat if provided
+        // Add tools if provided (normalize format)
+        if (opts.tools && opts.tools.length > 0) {
+            requestParams.tools = opts.tools.map(normalizeToolFormat);
+            if (opts.tool_choice !== undefined) {
+                requestParams.tool_choice = opts.tool_choice;
+            }
+        }
+
+        // Add responseFormat if provided (not compatible with tools)
         if (opts.responseFormat) {
             requestParams.response_format = opts.responseFormat;
         }
 
-        const response = await callWithRetry(apiClient, requestParams, retryConfig);
+        let response = await callWithRetry(apiClient, requestParams, retryConfig);
+        let totalTokenCount = extractTokenUsage(response);
+
+        // Tool calling loop
+        const toolExecutor = opts.toolExecutor || executeFileTool;
+        const maxToolIterations = 10; // Prevent infinite loops
+        let toolIterations = 0;
+
+        while (toolIterations < maxToolIterations) {
+            const message = response.choices[0]?.message;
+            const toolCalls = message?.tool_calls;
+
+            if (!toolCalls || toolCalls.length === 0) {
+                // No more tool calls, we're done
+                break;
+            }
+
+            toolIterations++;
+
+            // Emit tool call start event
+            if (opts.progressCallback) {
+                opts.progressCallback('TOOL_CALL_START', {
+                    iteration: toolIterations,
+                    toolCount: toolCalls.length
+                });
+            }
+
+            // Add assistant message with tool calls to history
+            messages.push(message);
+
+            // Execute each tool call
+            for (const toolCall of toolCalls) {
+                try {
+                    const toolName = toolCall.function.name;
+                    const toolArgs = JSON.parse(toolCall.function.arguments || "{}");
+
+                    // Execute tool
+                    const toolResult = await toolExecutor(
+                        toolName,
+                        toolArgs,
+                        opts.progressCallback,
+                        opts.workspace
+                    );
+
+                    // Add tool result to messages
+                    messages.push({
+                        role: "tool",
+                        tool_call_id: toolCall.id,
+                        content: JSON.stringify(toolResult)
+                    });
+                } catch (err) {
+                    // Add error result
+                    messages.push({
+                        role: "tool",
+                        tool_call_id: toolCall.id,
+                        content: JSON.stringify({
+                            ok: false,
+                            error: String(err?.message || err)
+                        })
+                    });
+                }
+            }
+
+            // Make follow-up request with tool results
+            const followupParams = {
+                model,
+                messages,
+                ...requestParams  // Preserve other params (tools, max_tokens, etc.)
+            };
+
+            // Remove tool_choice from follow-up requests to allow LLM to decide whether to continue
+            // This prevents infinite loops where tool_choice forces the same tool to be called repeatedly
+            delete followupParams.tool_choice;
+
+            // Emit tool call end event
+            if (opts.progressCallback) {
+                opts.progressCallback('TOOL_CALL_END', {
+                    iteration: toolIterations
+                });
+            }
+
+            response = await callWithRetry(apiClient, followupParams, retryConfig);
+
+            // Accumulate token usage
+            const followupTokens = extractTokenUsage(response);
+            if (totalTokenCount && followupTokens) {
+                totalTokenCount.promptTokens += followupTokens.promptTokens;
+                totalTokenCount.completionTokens += followupTokens.completionTokens;
+                totalTokenCount.totalTokens += followupTokens.totalTokens;
+            }
+        }
 
         const content = response.choices[0]?.message?.content || "";
-
-        // Extract token usage from response
-        const tokenCount = extractTokenUsage(response);
 
         // Save assistant response to persistence for internal tracking
         if (useInternalConversations) {
@@ -163,8 +294,8 @@ export async function executeStatic(prompt, opts = {}) {
         };
 
         // Add token count if available
-        if (tokenCount) {
-            result.tokenCount = tokenCount;
+        if (totalTokenCount) {
+            result.tokenCount = totalTokenCount;
         }
 
         return result;
@@ -190,6 +321,14 @@ export async function executeStatic(prompt, opts = {}) {
     if (opts.presence_penalty !== undefined) streamParams.presence_penalty = opts.presence_penalty;
     if (opts.stop !== undefined) streamParams.stop = opts.stop;
 
+    // Add tools if provided (normalize format) - IMPORTANT: Also needed for streaming!
+    if (opts.tools && opts.tools.length > 0) {
+        streamParams.tools = opts.tools.map(normalizeToolFormat);
+        if (opts.tool_choice !== undefined) {
+            streamParams.tool_choice = opts.tool_choice;
+        }
+    }
+
     // Add responseFormat if provided
     if (opts.responseFormat) {
         streamParams.response_format = opts.responseFormat;
@@ -200,9 +339,12 @@ export async function executeStatic(prompt, opts = {}) {
     // Always accumulate chunks for token estimation and optional persistence
     let fullContent = "";
     let usageData = null;
+    let toolCalls = [];
+    let currentToolCall = null;
 
     for await (const chunk of stream) {
-        const text = chunk.choices[0]?.delta?.content || '';
+        const delta = chunk.choices[0]?.delta;
+        const text = delta?.content || '';
 
         if (text) {
             // Accumulate all content (needed for token estimation)
@@ -214,9 +356,112 @@ export async function executeStatic(prompt, opts = {}) {
             }
         }
 
+        // Handle tool calls in streaming mode
+        if (delta?.tool_calls) {
+            for (const toolCallDelta of delta.tool_calls) {
+                const index = toolCallDelta.index;
+
+                // Start new tool call or continue existing one
+                if (!toolCalls[index]) {
+                    toolCalls[index] = {
+                        id: toolCallDelta.id || '',
+                        type: toolCallDelta.type || 'function',
+                        function: {
+                            name: toolCallDelta.function?.name || '',
+                            arguments: toolCallDelta.function?.arguments || ''
+                        }
+                    };
+                } else {
+                    // Accumulate function arguments
+                    if (toolCallDelta.function?.arguments) {
+                        toolCalls[index].function.arguments += toolCallDelta.function.arguments;
+                    }
+                    if (toolCallDelta.function?.name) {
+                        toolCalls[index].function.name += toolCallDelta.function.name;
+                    }
+                }
+            }
+        }
+
         // Extract usage data from final chunk (OpenAI streaming)
         if (chunk.usage) {
             usageData = chunk.usage;
+        }
+    }
+
+    // If we got tool calls in streaming mode, execute them
+    // This converts streaming to non-streaming for tool execution
+    const toolExecutor = opts.toolExecutor || executeFileTool;
+    if (toolCalls.length > 0 && toolExecutor) {
+        // Add assistant message with tool calls to conversation
+        const assistantMessage = {
+            role: "assistant",
+            content: fullContent,
+            tool_calls: toolCalls
+        };
+        messages.push(assistantMessage);
+
+        // Execute each tool call
+        for (const toolCall of toolCalls) {
+            try {
+                const toolName = toolCall.function.name;
+                const toolArgs = JSON.parse(toolCall.function.arguments || "{}");
+
+                // Execute tool
+                const toolResult = await toolExecutor(
+                    toolName,
+                    toolArgs,
+                    opts.progressCallback,
+                    opts.workspace
+                );
+
+                // Add tool result to messages
+                messages.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify(toolResult)
+                });
+            } catch (err) {
+                // Add error result
+                messages.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify({
+                        ok: false,
+                        error: String(err?.message || err)
+                    })
+                });
+            }
+        }
+
+        // After tool execution, make a non-streaming follow-up request for the final response
+        const followupParams = {
+            model,
+            messages,
+            stream: false
+        };
+
+        // Pass through API parameters but remove tools to avoid infinite loops
+        if (opts.max_tokens !== undefined) followupParams.max_tokens = opts.max_tokens;
+        if (opts.temperature !== undefined) followupParams.temperature = opts.temperature;
+
+        const followupResponse = await callWithRetry(apiClient, followupParams, retryConfig);
+        const followupContent = followupResponse.choices[0]?.message?.content || '';
+
+        // Stream the followup content if callback provided
+        if (opts.streamCallback && followupContent) {
+            opts.streamCallback(followupContent);
+        }
+
+        // Update fullContent with followup
+        fullContent = followupContent;
+
+        // Update usage data
+        const followupUsage = extractTokenUsage(followupResponse);
+        if (usageData && followupUsage) {
+            usageData.prompt_tokens += followupUsage.promptTokens;
+            usageData.completion_tokens += followupUsage.completionTokens;
+            usageData.total_tokens += followupUsage.totalTokens;
         }
     }
 

@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
 import { createSnapshot } from './snapshot.js';
-import { getStaticContextPrompt } from './prompts.js';
+import { getStaticContextPrompt, getStaticContextWithMegawriterPrompt } from './prompts.js';
 
 /**
  * Progress event constants for workspace operations
@@ -22,7 +22,9 @@ export const ProgressEvents = {
     FILES_WRITTEN: 'FILES_WRITTEN',
     FILE_STREAMING_START: 'FILE_STREAMING_START',
     FILE_STREAMING_CONTENT: 'FILE_STREAMING_CONTENT',
-    FILE_STREAMING_END: 'FILE_STREAMING_END'
+    FILE_STREAMING_END: 'FILE_STREAMING_END',
+    TOOL_CALL_START: 'TOOL_CALL_START',
+    TOOL_CALL_END: 'TOOL_CALL_END'
 };
 
 /**
@@ -179,8 +181,12 @@ export class Workspace {
      * @param {string} options.mode - Execution mode ('static' for static context loading)
      * @param {Object|string} options.snapshot - Snapshot config or pre-computed snapshot string
      * @param {boolean} options.decodeHtmlEntities - Decode HTML entities in static mode output (default: false)
-     * @param {boolean} options.stream - Enable streaming (static mode only)
+     * @param {boolean} options.stream - Enable streaming (static mode only, not compatible with tools)
      * @param {Function} options.streamCallback - Stream callback (static mode only): (chunk: string) => void
+     * @param {boolean} options.enableMegawriter - Enable write_multiple_files tool in static mode for batch file writing
+     * @param {Array} options.tools - Custom tool definitions
+     * @param {Object|string} options.tool_choice - Tool choice: "auto", "none", "required", or {type: "auto"} (Claude format)
+     * @param {Function} options.toolExecutor - Custom tool executor function (toolName, args) => Promise<result>
      * @returns {Promise<{content: string, conversationID: string, filesWritten?: Array}>}
      */
     async execute(prompt, options = {}) {
@@ -202,6 +208,10 @@ export class Workspace {
         if (options.conversation) builder.conversation();
         if (options.progressCallback) builder.progress(options.progressCallback);
 
+        // Apply tool options (note: dynamic mode uses all file tools from llm-dynamic.js)
+        if (options.tools) builder.tools(options.tools);
+        if (options.tool_choice) builder.toolChoice(options.tool_choice);
+
         return await builder.execute(prompt, options);
     }
 
@@ -214,6 +224,22 @@ export class Workspace {
      */
     async _executeStatic(prompt, options) {
         const progressCallback = options.progressCallback;
+
+        // Track files written via megawriter tool execution
+        const megawriterFilesWritten = [];
+        const wrappedProgressCallback = options.enableMegawriter && progressCallback
+            ? (event, data) => {
+                // Track FILE_STREAMING_END events to capture files written by megawriter
+                if (event === ProgressEvents.FILE_STREAMING_END && data?.path) {
+                    megawriterFilesWritten.push({
+                        path: data.path,
+                        size: data.fullContent?.length || 0
+                    });
+                }
+                // Forward to user's callback
+                progressCallback(event, data);
+            }
+            : progressCallback;
 
         // Generate or use provided snapshot
         let snapshot;
@@ -261,20 +287,33 @@ export class Workspace {
             };
         }
 
+        // Smart prompt selection based on tool usage
+        let systemPrompt;
+
+        if (options.enableMegawriter) {
+            // Megawriter mode: Batch file writing in single turn
+            systemPrompt = getStaticContextWithMegawriterPrompt();
+        } else {
+            // XML-based mode: Traditional <sg-file> tag output
+            systemPrompt = getStaticContextPrompt();
+        }
+
         // Construct final options (merge user options with static mode requirements)
+        // Note: builder.execute will handle tool merging based on enableMegawriter flag
         const finalOptions = {
-            ...options,  // Keep all user options (temperature, reasoningEffort, conversationID, conversationPersistence, etc.)
+            ...options,  // Keep all user options including enableMegawriter, tools, tool_choice
             workspace: this.path,
-            instructions: [...(options.instructions || []), getStaticContextPrompt()],
+            instructions: [...(options.instructions || []), systemPrompt],
             prompts: ['Here is the full codebase for context:', snapshot],
             saveAssistantMessage: false,  // We'll save compact version ourselves
-            streamCallback  // Use wrapped callback if streaming
+            streamCallback,  // Use wrapped callback if streaming
+            progressCallback: wrappedProgressCallback,  // Use wrapped callback to track megawriter files
             // Note: conversationPersistence is optional
             // - If provided: uses internal tracking (efficient, fresh snapshots)
             // - If not provided: not supported in static mode (no server-side conversations)
-        };
+        }
 
-        // Use builder with static mode (uses llm-static.js - no tooling, supports streaming)
+        // Use builder with static mode (uses llm-static.js - supports streaming or tool calling)
         const builder = new SigridBuilder();
         builder.static();  // Explicitly use static mode
 
@@ -291,14 +330,25 @@ export class Workspace {
         // Get content from either accumulated chunks (streaming) or result (non-streaming)
         const fullContent = options.stream ? accumulatedContent : result.content;
 
-        // Deserialize XML output to filesystem
-        // decodeHtmlEntities defaults to false (following DYAD's proven approach)
-        const decodeEntities = options.decodeHtmlEntities === true;
+        // Populate filesWritten based on mode:
+        // - If megawriter was used, files are already written via tool execution - use tracked files
+        // - Otherwise, deserialize XML output to filesystem
+        if (options.enableMegawriter && megawriterFilesWritten.length > 0) {
+            // Files already written by megawriter tool - use tracked list
+            result.filesWritten = megawriterFilesWritten;
+            if (progressCallback) {
+                progressCallback(ProgressEvents.FILES_WRITTEN, { count: result.filesWritten.length });
+            }
+        } else {
+            // Deserialize XML output to filesystem (traditional mode)
+            // decodeHtmlEntities defaults to false (following DYAD's proven approach)
+            const decodeEntities = options.decodeHtmlEntities === true;
 
-        if (progressCallback) progressCallback(ProgressEvents.FILES_WRITING);
-        result.filesWritten = await this.deserializeXmlOutput(fullContent, decodeEntities);
-        if (progressCallback) {
-            progressCallback(ProgressEvents.FILES_WRITTEN, { count: result.filesWritten.length });
+            if (progressCallback) progressCallback(ProgressEvents.FILES_WRITING);
+            result.filesWritten = await this.deserializeXmlOutput(fullContent, decodeEntities);
+            if (progressCallback) {
+                progressCallback(ProgressEvents.FILES_WRITTEN, { count: result.filesWritten.length });
+            }
         }
 
         // Save compact assistant message to persistence (default behavior for static mode)

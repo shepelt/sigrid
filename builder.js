@@ -1,5 +1,6 @@
 import { execute as executeDynamic } from './llm-dynamic.js';
 import { executeStatic } from './llm-static.js';
+import { megaWriterTool } from './filetooling.js';
 
 /**
  * Fluent builder for Sigrid LLM execution
@@ -156,8 +157,43 @@ export class SigridBuilder {
     }
 
     /**
-     * Use static mode (no tooling, uses chat.completions API)
-     * Static mode is the default. Supports streaming.
+     * Enable megawriter (write_multiple_files) tool - batch write in single turn
+     * - Much faster than multi-turn write_file calls
+     * - Automatically sets tool_choice to required for optimal performance
+     * - Best for creating multiple files at once
+     * @returns {SigridBuilder} this for chaining
+     */
+    enableMegawriter() {
+        this.options.enableMegawriter = true;
+        return this;
+    }
+
+    /**
+     * Add custom tools (in addition to or instead of file tools)
+     * @param {Array} toolsArray - Array of tool definitions
+     * @returns {SigridBuilder} this for chaining
+     */
+    tools(toolsArray) {
+        if (!Array.isArray(toolsArray)) {
+            throw new Error('tools() requires an array of tool definitions');
+        }
+        this.options.tools = toolsArray;
+        return this;
+    }
+
+    /**
+     * Set tool choice strategy
+     * @param {string|Object} choice - "auto", "none", "required", or {type: "auto"} for Claude
+     * @returns {SigridBuilder} this for chaining
+     */
+    toolChoice(choice) {
+        this.options.tool_choice = choice;
+        return this;
+    }
+
+    /**
+     * Use static mode (supports streaming and tool calling)
+     * Static mode is the default. Supports streaming (without tools) or tool calling (without streaming).
      * @returns {SigridBuilder} this for chaining
      */
     static() {
@@ -194,6 +230,27 @@ export class SigridBuilder {
      */
     async execute(prompt, additionalOpts = {}) {
         const finalOptions = { ...this.options, ...additionalOpts };
+
+        // Handle enableMegawriter option - batch file writing in single turn
+        if (finalOptions.enableMegawriter) {
+            const customTools = finalOptions.tools || [];
+            finalOptions.tools = [megaWriterTool, ...customTools];
+
+            // Set tool_choice to required for optimal performance (skip LLM thinking time)
+            // Format depends on provider:
+            // - OpenAI: { type: "function", function: { name: "..." } }
+            // - Anthropic: { type: "tool", name: "..." }
+            if (!finalOptions.tool_choice) {
+                const model = finalOptions.model || '';
+                const isAnthropic = model.includes('anthropic') || model.includes('claude');
+
+                finalOptions.tool_choice = isAnthropic
+                    ? { type: "tool", name: "write_multiple_files" }
+                    : { type: "function", function: { name: "write_multiple_files" } };
+            }
+
+            delete finalOptions.enableMegawriter; // Remove flag, no longer needed
+        }
 
         if (this.mode === 'static') {
             return executeStatic(prompt, finalOptions);
