@@ -228,4 +228,103 @@ describe('workspace.chat()', () => {
         expect(eventNames).toContain('RESPONSE_WAITING');
         expect(eventNames).toContain('RESPONSE_RECEIVED');
     });
+
+    test('custom instructions with instruction parameter', async () => {
+        const customInstruction = 'When describing code, always mention the programming language being used.';
+
+        const result = await workspace.chat('Describe what a function is', {
+            model,
+            instruction: customInstruction,
+            includeWorkspace: {
+                aiRules: false,
+                fileStructure: false,
+                files: false
+            }
+        });
+
+        expect(result.content).toBeTruthy();
+        // LLM should follow the instruction and mention programming languages
+        const content = result.content.toLowerCase();
+        expect(
+            content.includes('javascript') ||
+            content.includes('python') ||
+            content.includes('language')
+        ).toBe(true);
+    });
+
+    test('custom instructions with instructions array', async () => {
+        const instruction1 = 'You are a database expert.';
+        const instruction2 = 'When asked about databases, mention PostgreSQL and MongoDB.';
+
+        const result = await workspace.chat('What databases should I use?', {
+            model,
+            instructions: [instruction1, instruction2],
+            includeWorkspace: {
+                aiRules: false,
+                fileStructure: false,
+                files: false
+            }
+        });
+
+        expect(result.content).toBeTruthy();
+        const content = result.content.toLowerCase();
+        // Should mention the databases from instructions
+        expect(
+            content.includes('postgresql') || content.includes('postgres') || content.includes('mongodb') || content.includes('mongo')
+        ).toBe(true);
+    });
+
+    test('instructions combined with workspace context', async () => {
+        // Create a test file
+        await fs.writeFile(path.join(workspace.path, 'app.js'), 'function hello() { return "hi"; }');
+
+        const customInstruction = 'When listing files, also describe their purpose.';
+
+        const result = await workspace.chat('What files are in this project?', {
+            model,
+            instruction: customInstruction,
+            includeWorkspace: {
+                aiRules: false,
+                fileStructure: true,
+                files: false
+            }
+        });
+
+        expect(result.content).toBeTruthy();
+        const content = result.content.toLowerCase();
+        // Should mention the file
+        expect(content.includes('app.js') || content.includes('app')).toBe(true);
+    });
+
+    test('addon documentation use case', async () => {
+        // Simulate addon documentation
+        const dbAddonDocs = `
+# Database Addon API
+
+## query(sql, params)
+Execute a SQL query against the database.
+
+Example:
+const results = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+`;
+
+        const result = await workspace.chat('How do I query the database for a user by ID?', {
+            model,
+            instructions: [dbAddonDocs],
+            includeWorkspace: {
+                aiRules: false,
+                fileStructure: false,
+                files: false
+            }
+        });
+
+        expect(result.content).toBeTruthy();
+        const content = result.content.toLowerCase();
+        // Should reference the addon API
+        expect(
+            content.includes('db.query') ||
+            content.includes('query') ||
+            content.includes('select')
+        ).toBe(true);
+    });
 });

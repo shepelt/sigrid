@@ -689,6 +689,8 @@ export class Workspace {
      * @param {boolean} options.conversation - Enable conversation mode (default: true if conversationPersistence provided)
      * @param {string} options.conversationID - Existing conversation ID
      * @param {Object} options.conversationPersistence - Persistence provider (enables conversation mode)
+     * @param {string[]} options.instructions - Array of instruction strings (highest priority)
+     * @param {string} options.instruction - Single instruction string
      * @param {Object} options.includeWorkspace - Workspace inclusion options
      * @param {boolean} options.includeWorkspace.aiRules - Include AI_RULES.md (default: true)
      * @param {boolean} options.includeWorkspace.fileStructure - Include file paths only (default: true)
@@ -709,6 +711,13 @@ export class Workspace {
      *   conversationID: r1.conversationID,
      *   conversationPersistence: persistence
      * });
+     *
+     * // Chat with custom instructions (e.g., addon docs)
+     * const dbDocs = await fs.readFile('docs/database-api.md', 'utf-8');
+     * const r3 = await workspace.chat('How do I query the database?', {
+     *   instructions: [dbDocs],
+     *   includeWorkspace: { aiRules: true, fileStructure: true, files: false }
+     * });
      */
     async chat(message, options = {}) {
         const {
@@ -717,6 +726,8 @@ export class Workspace {
             conversationPersistence,
             conversationID,
             includeWorkspace = {},
+            instructions = [],
+            instruction,
             progressCallback
         } = options;
 
@@ -733,6 +744,14 @@ export class Workspace {
 
         // Build context prompts
         const contextPrompts = [];
+
+        // Include custom instructions FIRST (highest priority)
+        if (instruction) {
+            contextPrompts.push(instruction);
+        }
+        if (Array.isArray(instructions) && instructions.length > 0) {
+            contextPrompts.push(...instructions);
+        }
 
         // Include AI rules if requested
         if (includeAIRules) {

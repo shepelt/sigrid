@@ -1231,6 +1231,10 @@ await workspace.chat(message, {
   conversationID: 'project-123-chat', // Existing conversation ID
   conversationPersistence: persistence, // Persistence provider (enables conversation mode)
 
+  // Custom instructions (highest priority)
+  instruction: 'Single instruction string',   // Single instruction
+  instructions: ['Instruction 1', 'Instruction 2'], // Array of instructions
+
   includeWorkspace: {
     aiRules: true,                   // Include AI_RULES.md (default: true)
     fileStructure: true,             // Include file paths only (default: true)
@@ -1241,6 +1245,48 @@ await workspace.chat(message, {
   max_tokens: 16000                  // Maximum output tokens (default: 16000)
 });
 ```
+
+#### Custom Instructions
+
+Inject custom context like addon documentation, API references, or guidelines:
+
+**Single Instruction:**
+```javascript
+await workspace.chat('How do I use the database?', {
+  instruction: 'Always recommend using prepared statements for security.',
+  includeWorkspace: { aiRules: true, fileStructure: true, files: false }
+});
+```
+
+**Multiple Instructions:**
+```javascript
+import fs from 'fs/promises';
+
+// Load addon documentation
+const dbDocs = await fs.readFile('docs/database-api.md', 'utf-8');
+const chartsDocs = await fs.readFile('docs/charts-api.md', 'utf-8');
+
+await workspace.chat('How do I query the database and display results in a chart?', {
+  instructions: [dbDocs, chartsDocs],  // Custom API documentation
+  includeWorkspace: {
+    aiRules: true,
+    fileStructure: true,
+    files: false  // Lightweight: no full file contents
+  }
+});
+```
+
+**Use Cases:**
+- Addon API documentation (database, charts, authentication)
+- Custom coding guidelines beyond AI_RULES.md
+- Temporary context for specific questions
+- External API references
+
+**Priority Order:**
+1. Custom `instruction` / `instructions` (highest)
+2. AI_RULES.md (if enabled)
+3. Workspace file structure (if enabled)
+4. File contents (if enabled)
 
 #### Workspace Inclusion Options
 
