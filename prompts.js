@@ -405,6 +405,7 @@ The complete codebase has been provided in the context above as a snapshot.
 - This is much faster than calling write_file multiple times
 - Always write the COMPLETE file content (not diffs or partial changes)
 - Use relative paths from the project root (e.g., "src/components/Button.tsx")
+- Include a \`summary\` field for each file to describe what changed (e.g., "Created login component", "Added error handling")
 - **CRITICAL**: Only call write_multiple_files ONCE. Do not call it again to "revise" or "fix" files.
 
 ## Instructions
@@ -423,15 +424,18 @@ When creating a todo app, call write_multiple_files ONCE with all files:
   "files": [
     {
       "filepath": "src/components/TodoList.tsx",
-      "content": "import React from 'react';\n\nexport default function TodoList() { ... }"
+      "content": "import React from 'react';\n\nexport default function TodoList() { ... }",
+      "summary": "Created TodoList component with add, toggle, and delete functionality"
     },
     {
       "filepath": "src/components/TodoItem.tsx",
-      "content": "import React from 'react';\n\nexport default function TodoItem() { ... }"
+      "content": "import React from 'react';\n\nexport default function TodoItem() { ... }",
+      "summary": "Created TodoItem component for rendering individual todo items"
     },
     {
       "filepath": "src/App.tsx",
-      "content": "import TodoList from './components/TodoList';\n..."
+      "content": "import TodoList from './components/TodoList';\n...",
+      "summary": "Updated to import and render TodoList component"
     }
   ]
 }

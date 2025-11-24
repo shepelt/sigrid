@@ -8,10 +8,12 @@ import {
     handleReadFile,
     handleListDir,
     handleWriteFile,
+    handleWriteMultipleFiles,
     executeFileTool,
     readFileTool,
     listDirTool,
     writeFileTool,
+    megaWriterTool,
     fileTools
 } from '../filetooling.js';
 
@@ -84,6 +86,26 @@ describe('Filetooling', () => {
             expect(fileTools).toContain(readFileTool);
             expect(fileTools).toContain(listDirTool);
             expect(fileTools).toContain(writeFileTool);
+        });
+
+        test('megaWriterTool has correct structure with summary field', () => {
+            expect(megaWriterTool).toHaveProperty('type', 'function');
+            expect(megaWriterTool).toHaveProperty('name', 'write_multiple_files');
+            expect(megaWriterTool).toHaveProperty('description');
+            expect(megaWriterTool).toHaveProperty('parameters');
+
+            // Verify summary field is in schema
+            const fileItemProps = megaWriterTool.parameters.properties.files.items.properties;
+            expect(fileItemProps).toHaveProperty('filepath');
+            expect(fileItemProps).toHaveProperty('content');
+            expect(fileItemProps).toHaveProperty('summary');
+            expect(fileItemProps.summary.description).toContain('Brief description');
+
+            // Verify summary is optional (not in required array)
+            const required = megaWriterTool.parameters.properties.files.items.required;
+            expect(required).toContain('filepath');
+            expect(required).toContain('content');
+            expect(required).not.toContain('summary');
         });
     });
 
@@ -278,6 +300,104 @@ describe('Filetooling', () => {
         test('executeFileTool throws error for unknown tool', async () => {
             await expect(executeFileTool('unknown_tool', {}, mockProgressCallback))
                 .rejects.toThrow('Unknown tool: unknown_tool');
+        });
+    });
+
+    describe('Write Multiple Files', () => {
+        test('handleWriteMultipleFiles creates multiple files', async () => {
+            const files = [
+                { filepath: 'file1.txt', content: 'content1' },
+                { filepath: 'file2.js', content: 'content2' }
+            ];
+
+            const result = await handleWriteMultipleFiles(
+                { files },
+                mockProgressCallback,
+                tempDir
+            );
+
+            expect(result.ok).toBe(true);
+            expect(result.filesWritten).toBe(2);
+            expect(result.filesFailed).toBe(0);
+            expect(result.totalFiles).toBe(2);
+
+            // Verify files exist
+            const file1 = await fs.readFile(path.join(tempDir, 'file1.txt'), 'utf-8');
+            const file2 = await fs.readFile(path.join(tempDir, 'file2.js'), 'utf-8');
+            expect(file1).toBe('content1');
+            expect(file2).toBe('content2');
+        });
+
+        test('handleWriteMultipleFiles emits FILE_STREAMING_START with summary', async () => {
+            const fileStreamingEvents = [];
+            const trackingCallback = (event, data) => {
+                if (event === 'FILE_STREAMING_START') {
+                    fileStreamingEvents.push(data);
+                }
+            };
+
+            const files = [
+                {
+                    filepath: 'component.tsx',
+                    content: 'export default function Component() {}',
+                    summary: 'Created reusable button component'
+                },
+                {
+                    filepath: 'util.ts',
+                    content: 'export const util = () => {}',
+                    summary: 'Added utility function'
+                },
+                {
+                    filepath: 'no-summary.ts',
+                    content: 'export const test = () => {}'
+                    // No summary field
+                }
+            ];
+
+            await handleWriteMultipleFiles(
+                { files },
+                trackingCallback,
+                tempDir
+            );
+
+            // Verify FILE_STREAMING_START events
+            expect(fileStreamingEvents).toHaveLength(3);
+
+            // First file with summary
+            expect(fileStreamingEvents[0]).toEqual({
+                path: 'component.tsx',
+                action: 'write',
+                summary: 'Created reusable button component'
+            });
+
+            // Second file with summary
+            expect(fileStreamingEvents[1]).toEqual({
+                path: 'util.ts',
+                action: 'write',
+                summary: 'Added utility function'
+            });
+
+            // Third file without summary
+            expect(fileStreamingEvents[2]).toEqual({
+                path: 'no-summary.ts',
+                action: 'write'
+            });
+            expect(fileStreamingEvents[2]).not.toHaveProperty('summary');
+        });
+
+        test('handleWriteMultipleFiles works without progress callback', async () => {
+            const files = [
+                { filepath: 'file1.txt', content: 'content1' }
+            ];
+
+            const result = await handleWriteMultipleFiles(
+                { files },
+                null, // No callback
+                tempDir
+            );
+
+            expect(result.ok).toBe(true);
+            expect(result.filesWritten).toBe(1);
         });
     });
 

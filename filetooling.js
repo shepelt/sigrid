@@ -88,7 +88,8 @@ export const megaWriterTool = {
                     type: "object",
                     properties: {
                         filepath: { type: "string", description: "Relative path from project root" },
-                        content: { type: "string", description: "UTF-8 text content to write" }
+                        content: { type: "string", description: "UTF-8 text content to write" },
+                        summary: { type: "string", description: "Brief description of changes made to this file (e.g., 'Created login component', 'Added error handling')" }
                     },
                     required: ["filepath", "content"]
                 }
@@ -381,10 +382,14 @@ export async function handleWriteMultipleFiles(args = {}, progressCallback = nul
             try {
                 // Emit FILE_STREAMING_START event
                 if (progressCallback) {
-                    progressCallback('FILE_STREAMING_START', {
+                    const eventData = {
                         path: file.filepath,
                         action: 'write'
-                    });
+                    };
+                    if (file.summary) {
+                        eventData.summary = file.summary;
+                    }
+                    progressCallback('FILE_STREAMING_START', eventData);
                 }
 
                 // Emit FILE_STREAMING_CONTENT event with full content
