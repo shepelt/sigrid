@@ -52,6 +52,7 @@ function generateConversationID() {
  * @param {OpenAI} opts.client - Custom OpenAI client (optional, uses initialized client by default)
  * @param {string} opts.model - Model name (default: "gpt-5-mini")
  * @param {string|string[]} opts.instructions - System instruction(s)
+ * @param {boolean|string} opts.consolidateSystemMessages - Controls system message consolidation. true = consolidate with default separator '\n\n---\n\n', false = separate messages (default), string = consolidate with custom separator. Enable when using Claude via gateways to prevent instruction priority issues.
  * @param {string|string[]} opts.prompts - Additional user prompts inserted before main prompt
  * @param {boolean} opts.conversation - Enable internal conversation mode
  * @param {string} opts.conversationID - Existing conversation ID
@@ -121,8 +122,22 @@ export async function executeStatic(prompt, opts = {}) {
             ? opts.instructions
             : [opts.instructions];
 
-        for (const inst of instructions) {
-            messages.push({ role: "system", content: inst });
+        // Consolidation is opt-in to preserve existing behavior across all LLM providers
+        // Enable for Claude via gateways to fix instruction priority issues
+        // Accepts: true (default separator), false (no consolidation - default), or string (custom separator)
+        const consolidate = opts.consolidateSystemMessages ?? false;
+
+        if (consolidate === false) {
+            // Legacy behavior: separate system message for each instruction
+            for (const inst of instructions) {
+                messages.push({ role: "system", content: inst });
+            }
+        } else {
+            // Consolidate into single system message
+            // Multiple system messages cause Claude to ignore earlier instructions
+            const separator = typeof consolidate === 'string' ? consolidate : '\n\n---\n\n';
+            const combinedInstructions = instructions.join(separator);
+            messages.push({ role: "system", content: combinedInstructions });
         }
     }
 
