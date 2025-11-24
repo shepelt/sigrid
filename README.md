@@ -254,6 +254,7 @@ sigrid.initializeClient('your-api-key');
 **Workspace Functions:**
 - `createWorkspace(tarballBuffer?)` - Create new workspace (optionally from tarball)
 - `workspace.execute(prompt, options)` - Execute with static mode support
+- `workspace.chat(message, options)` - Chat about code without generating files (lightweight)
 - `workspace.snapshot(config?)` - Generate XML snapshot of workspace
 - `workspace.deserializeXmlOutput(content)` - Parse `<sg-file>` tags from LLM output
 - `workspace.export()` - Export workspace as tar.gz Buffer
@@ -1180,6 +1181,251 @@ export default function App() {
 ```
 
 Files are automatically deserialized and written to the workspace.
+
+### Workspace Chat Mode
+
+The `workspace.chat()` method provides a lightweight conversational interface for discussing code without generating files. Unlike `execute()` which is optimized for code generation, `chat()` is designed for Q&A about your project.
+
+#### Key Differences from Execute Mode
+
+**workspace.chat()** (conversational):
+- Includes AI_RULES.md + file structure (paths only)
+- No file generation
+- Lower token usage
+- Separate conversation history
+- Ideal for questions and discussions
+
+**workspace.execute()** (code generation):
+- Includes full file contents
+- Generates and writes files
+- Higher token usage
+- For actual code modifications
+
+#### Basic Usage
+
+```javascript
+import { createWorkspace, InMemoryPersistence } from 'sigrid';
+
+const workspace = await createWorkspace();
+const persistence = new InMemoryPersistence();
+
+// Ask about the project
+const r1 = await workspace.chat('What files are in this project?', {
+  conversationPersistence: persistence,
+  conversationID: `${projectId}-chat`
+});
+
+// Continue the conversation
+const r2 = await workspace.chat('What does App.tsx do?', {
+  conversationID: r1.conversationID,
+  conversationPersistence: persistence
+});
+```
+
+#### API Options
+
+```javascript
+await workspace.chat(message, {
+  model: 'gpt-5-mini',              // Model to use
+  conversation: true,                // Enable conversation mode (default: true if persistence provided)
+  conversationID: 'project-123-chat', // Existing conversation ID
+  conversationPersistence: persistence, // Persistence provider (enables conversation mode)
+
+  includeWorkspace: {
+    aiRules: true,                   // Include AI_RULES.md (default: true)
+    fileStructure: true,             // Include file paths only (default: true)
+    files: false                     // Include full file contents (default: false)
+  },
+
+  progressCallback: (event, data) => {}, // Progress events
+  max_tokens: 16000                  // Maximum output tokens (default: 16000)
+});
+```
+
+#### Workspace Inclusion Options
+
+Control what context is provided to the LLM:
+
+**AI Rules Only** (minimal context):
+```javascript
+await workspace.chat('What coding standards should I follow?', {
+  includeWorkspace: {
+    aiRules: true,
+    fileStructure: false,
+    files: false
+  }
+});
+```
+
+**File Structure** (lightweight - paths only):
+```javascript
+await workspace.chat('What components exist in this project?', {
+  includeWorkspace: {
+    aiRules: true,
+    fileStructure: true,  // Shows file paths, not contents
+    files: false
+  }
+});
+```
+
+**Full Files** (heavy - like execute mode):
+```javascript
+await workspace.chat('Explain the implementation of Button.tsx', {
+  includeWorkspace: {
+    aiRules: true,
+    fileStructure: true,
+    files: true  // Includes full file contents (high token usage)
+  }
+});
+```
+
+#### Conversation Management
+
+Chat mode automatically enables conversation when persistence is provided:
+
+```javascript
+const persistence = new InMemoryPersistence();
+
+// First message - conversation automatically enabled
+const r1 = await workspace.chat('My API key is abc123', {
+  conversationPersistence: persistence,
+  conversationID: 'project-123-chat'
+});
+
+// Remembers previous context
+const r2 = await workspace.chat('What is my API key?', {
+  conversationID: r1.conversationID,
+  conversationPersistence: persistence
+});
+// Returns: "Your API key is abc123"
+```
+
+#### Separate Conversation IDs
+
+Use different conversation IDs for chat vs code generation to keep contexts separate:
+
+```javascript
+const projectId = 'myproject-123';
+
+// Chat conversations
+await workspace.chat('What files exist?', {
+  conversationID: `${projectId}-chat`,
+  conversationPersistence: persistence
+});
+
+// Code generation conversations
+await workspace.execute('Add a Button component', {
+  mode: 'static',
+  conversationID: projectId,
+  conversationPersistence: persistence
+});
+```
+
+#### Progress Events
+
+Monitor chat operations with progress callbacks:
+
+```javascript
+await workspace.chat('Hello', {
+  includeWorkspace: {
+    fileStructure: true
+  },
+  progressCallback: (event, data) => {
+    switch (event) {
+      case 'SNAPSHOT_GENERATING':
+        console.log('Building file structure...');
+        break;
+      case 'SNAPSHOT_GENERATED':
+        console.log('File structure ready');
+        break;
+      case 'RESPONSE_WAITING':
+        console.log('Waiting for LLM response...');
+        break;
+      case 'RESPONSE_RECEIVED':
+        console.log('Response received');
+        break;
+    }
+  }
+});
+```
+
+#### Return Value
+
+```javascript
+{
+  content: "...",              // LLM response text
+  conversationID: "...",       // Conversation ID (for multi-turn)
+  tokenCount: {                // Token usage (when available)
+    promptTokens: 150,
+    completionTokens: 80,
+    totalTokens: 230,
+    estimated: false
+  }
+}
+```
+
+#### When to Use Chat vs Execute
+
+**Use workspace.chat() when:**
+- Asking questions about the codebase
+- Discussing architecture or design
+- Getting explanations of existing code
+- Brainstorming ideas
+- Reviewing file structure
+
+**Use workspace.execute() when:**
+- Generating new files
+- Modifying existing code
+- Refactoring
+- Adding features
+- Fixing bugs
+
+#### Complete Example
+
+```javascript
+import { createWorkspace, InMemoryPersistence } from 'sigrid';
+import fs from 'fs/promises';
+
+async function chatAboutProject() {
+  // Load project template
+  const template = await fs.readFile('./react-template.tar.gz');
+  const workspace = await createWorkspace(template);
+
+  // Setup persistence
+  const persistence = new InMemoryPersistence();
+  const conversationID = 'project-123-chat';
+
+  // Ask about architecture
+  const r1 = await workspace.chat(
+    'What is the overall architecture of this project?',
+    {
+      conversationPersistence: persistence,
+      conversationID,
+      includeWorkspace: {
+        aiRules: true,
+        fileStructure: true,
+        files: false
+      }
+    }
+  );
+
+  console.log('Architecture overview:', r1.content);
+
+  // Follow-up question
+  const r2 = await workspace.chat(
+    'Which files handle routing?',
+    {
+      conversationID: r1.conversationID,
+      conversationPersistence: persistence
+    }
+  );
+
+  console.log('Routing files:', r2.content);
+
+  // Cleanup
+  await workspace.delete();
+}
+```
 
 ### Addon System
 

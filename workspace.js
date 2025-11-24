@@ -7,6 +7,7 @@ import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
 import { createSnapshot } from './snapshot.js';
 import { getStaticContextPrompt, getStaticContextWithMegawriterPrompt } from './prompts.js';
+import { executeStatic } from './llm-static.js';
 
 /**
  * Progress event constants for workspace operations
@@ -671,6 +672,118 @@ export class Workspace {
             messagesProcessed: history.length,
             messagesCompacted
         };
+    }
+
+    /**
+     * Chat with LLM using lightweight workspace context
+     * Similar to execute() but optimized for conversational use cases:
+     * - Includes AI_RULES.md for project guidelines
+     * - Includes file structure (paths only) for context
+     * - Does NOT include full file contents (use execute() for code generation)
+     * - Separate conversation ID namespace (${projectId}-chat vs ${projectId})
+     * - Built-in persistence and automatic history management
+     *
+     * @param {string} message - User message
+     * @param {Object} options - Chat options
+     * @param {string} options.model - Model to use (default: 'gpt-5-mini')
+     * @param {boolean} options.conversation - Enable conversation mode (default: true if conversationPersistence provided)
+     * @param {string} options.conversationID - Existing conversation ID
+     * @param {Object} options.conversationPersistence - Persistence provider (enables conversation mode)
+     * @param {Object} options.includeWorkspace - Workspace inclusion options
+     * @param {boolean} options.includeWorkspace.aiRules - Include AI_RULES.md (default: true)
+     * @param {boolean} options.includeWorkspace.fileStructure - Include file paths only (default: true)
+     * @param {boolean} options.includeWorkspace.files - Include full file contents (default: false)
+     * @param {Function} options.progressCallback - Progress callback
+     * @returns {Promise<{content: string, conversationID: string}>}
+     *
+     * @example
+     * // Start a chat conversation
+     * const r1 = await workspace.chat('What files are in this project?', {
+     *   conversation: true,
+     *   conversationPersistence: new InMemoryPersistence(),
+     *   conversationID: `${projectId}-chat`
+     * });
+     *
+     * // Continue conversation
+     * const r2 = await workspace.chat('What does App.tsx do?', {
+     *   conversationID: r1.conversationID,
+     *   conversationPersistence: persistence
+     * });
+     */
+    async chat(message, options = {}) {
+        const {
+            model = 'gpt-5-mini',
+            conversation,
+            conversationPersistence,
+            conversationID,
+            includeWorkspace = {},
+            progressCallback
+        } = options;
+
+        // Enable conversation mode only if persistence is provided
+        // (executeStatic requires conversationPersistence when conversation: true)
+        const enableConversation = conversation !== undefined
+            ? conversation
+            : !!conversationPersistence;
+
+        // Default workspace inclusion: AI rules + file structure, no full contents
+        const includeAIRules = includeWorkspace.aiRules !== false; // default: true
+        const includeFileStructure = includeWorkspace.fileStructure !== false; // default: true
+        const includeFiles = includeWorkspace.files === true; // default: false
+
+        // Build context prompts
+        const contextPrompts = [];
+
+        // Include AI rules if requested
+        if (includeAIRules) {
+            const aiRules = await this.getAIRules();
+            if (aiRules) {
+                contextPrompts.push('Project Guidelines:\n' + aiRules);
+            }
+        }
+
+        // Include workspace structure if requested
+        if (includeFileStructure || includeFiles) {
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATING);
+
+            let snapshot;
+            if (includeFiles) {
+                // Full snapshot with file contents (like execute mode)
+                snapshot = await this.snapshot();
+            } else {
+                // Lightweight snapshot: file structure only (paths, no contents)
+                // maxFileSize: 0 means all files >0 bytes are omitted
+                // includePlaceholders: true means we show paths of omitted files
+                snapshot = await this.snapshot({
+                    includePlaceholders: true,
+                    maxFileSize: 0
+                });
+            }
+
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATED);
+            contextPrompts.push('Project Structure:\n' + snapshot);
+        }
+
+        // Use llm-static for chat mode (no file tools, just conversation)
+        if (progressCallback) {
+            progressCallback(ProgressEvents.RESPONSE_WAITING);
+        }
+
+        const result = await executeStatic(message, {
+            model,
+            conversation: enableConversation,
+            conversationID,
+            conversationPersistence,
+            prompts: contextPrompts,
+            progressCallback,
+            max_tokens: options.max_tokens || 16000  // Default max tokens for chat
+        });
+
+        if (progressCallback) {
+            progressCallback(ProgressEvents.RESPONSE_RECEIVED);
+        }
+
+        return result;
     }
 
     /**
