@@ -301,7 +301,6 @@ export class Workspace {
 
         // Construct final options (merge user options with static mode requirements)
         // Note: builder.execute will handle tool merging based on enableMegawriter flag
-        // Note: chat() and execute() share the same conversationID for unified history
         const finalOptions = {
             ...options,  // Keep all user options including enableMegawriter, tools, tool_choice
             workspace: this.path,
