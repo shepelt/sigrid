@@ -192,6 +192,38 @@ export class SigridBuilder {
     }
 
     /**
+     * Add file attachments to the message
+     * Attachments are adaptively formatted based on model vision capability:
+     * - Vision models: Images sent as image content blocks
+     * - Non-vision models: Images replaced with placeholder, text inlined
+     *
+     * @param {Array} attachmentsArray - Array of attachment objects
+     * @param {string} attachmentsArray[].filename - File name (e.g., "screenshot.png")
+     * @param {string} attachmentsArray[].mimeType - MIME type (e.g., "image/png", "text/csv")
+     * @param {string} attachmentsArray[].data - Base64 encoded file content
+     * @param {string} [attachmentsArray[].id] - Optional unique identifier
+     * @returns {SigridBuilder} this for chaining
+     *
+     * @example
+     * // Attach an image
+     * sigrid()
+     *   .model('gpt-4o')
+     *   .attachments([{
+     *     filename: 'screenshot.png',
+     *     mimeType: 'image/png',
+     *     data: fs.readFileSync('screenshot.png').toString('base64')
+     *   }])
+     *   .execute('Describe this image');
+     */
+    attachments(attachmentsArray) {
+        if (!Array.isArray(attachmentsArray)) {
+            throw new Error('attachments() requires an array of attachment objects');
+        }
+        this.options.attachments = attachmentsArray;
+        return this;
+    }
+
+    /**
      * Use static mode (supports streaming and tool calling)
      * Static mode is the default. Supports streaming (without tools) or tool calling (without streaming).
      * @returns {SigridBuilder} this for chaining

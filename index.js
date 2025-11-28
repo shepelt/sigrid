@@ -56,6 +56,18 @@ import {
     accumulateTokenUsage
 } from './token-utils.js';
 
+import {
+    SUPPORTED_MIME_TYPES,
+    getAttachmentInfo
+} from './model-config.js';
+
+import {
+    validateAttachment,
+    formatMessageWithAttachments,
+    formatMessagesWithAttachments,
+    attachmentsRequireVision
+} from './attachments.js';
+
 // Factory function that creates a new builder instance
 function sigrid() {
     return new SigridBuilder();
@@ -93,6 +105,14 @@ sigrid.estimateTokens = estimateTokens;
 sigrid.extractTokenUsage = extractTokenUsage;
 sigrid.accumulateTokenUsage = accumulateTokenUsage;
 
+// Attachment utilities
+sigrid.SUPPORTED_MIME_TYPES = SUPPORTED_MIME_TYPES;
+sigrid.getAttachmentInfo = getAttachmentInfo;
+sigrid.validateAttachment = validateAttachment;
+sigrid.formatMessageWithAttachments = formatMessageWithAttachments;
+sigrid.formatMessagesWithAttachments = formatMessagesWithAttachments;
+sigrid.attachmentsRequireVision = attachmentsRequireVision;
+
 // Default export: factory function with attached methods
 export default sigrid;
 
@@ -127,5 +147,12 @@ export {
     DEFAULT_EXTENSIONS,
     estimateTokens,
     extractTokenUsage,
-    accumulateTokenUsage
+    accumulateTokenUsage,
+    // Attachment utilities
+    SUPPORTED_MIME_TYPES,
+    getAttachmentInfo,
+    validateAttachment,
+    formatMessageWithAttachments,
+    formatMessagesWithAttachments,
+    attachmentsRequireVision
 };

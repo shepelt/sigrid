@@ -689,6 +689,7 @@ export class Workspace {
      * @param {boolean} options.conversation - Enable conversation mode (default: true if conversationPersistence provided)
      * @param {string} options.conversationID - Existing conversation ID
      * @param {Object} options.conversationPersistence - Persistence provider (enables conversation mode)
+     * @param {Array} options.attachments - File attachments for this message. Each: { filename, mimeType, data (base64) }
      * @param {string[]} options.instructions - Array of instruction strings (highest priority)
      * @param {string} options.instruction - Single instruction string
      * @param {Object} options.includeWorkspace - Workspace inclusion options
@@ -725,6 +726,7 @@ export class Workspace {
             conversation,
             conversationPersistence,
             conversationID,
+            attachments,
             includeWorkspace = {},
             instructions = [],
             instruction,
@@ -793,6 +795,7 @@ export class Workspace {
             conversation: enableConversation,
             conversationID,
             conversationPersistence,
+            attachments,
             prompts: contextPrompts,
             progressCallback,
             max_tokens: options.max_tokens || 16000  // Default max tokens for chat

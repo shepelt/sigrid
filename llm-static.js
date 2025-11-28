@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { getClient } from "./llm-client.js";
 import { extractTokenUsage, estimateTokens } from "./token-utils.js";
 import { executeFileTool } from "./filetooling.js";
+import { formatMessageWithAttachments, formatMessagesWithAttachments, prepareMessageForPersistence } from "./attachments.js";
 
 const DEFAULT_MODEL = "gpt-5-mini";
 
@@ -66,6 +67,7 @@ function generateConversationID() {
  * @param {string} opts.workspace - Workspace path for tool execution (passed to toolExecutor)
  * @param {Function} opts.progressCallback - Progress callback for tool execution
  * @param {Object} opts.responseFormat - Response format for structured outputs (e.g., { type: "json_object" } or { type: "json_schema", json_schema: {...} })
+ * @param {Array} opts.attachments - Array of file attachments for the current message. Each attachment: { id?, filename, mimeType, data (base64) }
  * @param {boolean} opts.retry - Enable retry on rate limit errors (default: true)
  * @param {number} opts.maxRetries - Maximum number of retry attempts (default: 2)
  * @param {number} opts.retryBaseDelay - Base delay in seconds for exponential backoff (default: 5)
@@ -153,17 +155,26 @@ export async function executeStatic(prompt, opts = {}) {
     }
 
     // Add previous conversation history (for internal tracking)
+    // Format messages with attachments for the target model
     if (useInternalConversations && previousMessages.length > 0) {
-        messages.push(...previousMessages);
+        const formattedHistory = formatMessagesWithAttachments(previousMessages, model);
+        messages.push(...formattedHistory);
     }
 
-    // Add current user prompt
-    const userMessage = { role: "user", content: prompt };
-    messages.push(userMessage);
+    // Build current user message with optional attachments
+    const userMessageForPersistence = {
+        role: "user",
+        content: prompt,
+        ...(opts.attachments && opts.attachments.length > 0 ? { attachments: opts.attachments } : {})
+    };
 
-    // Track new message for persistence
+    // Format user message for API (adapts to vision/non-vision model)
+    const userMessageForAPI = formatMessageWithAttachments(userMessageForPersistence, model);
+    messages.push(userMessageForAPI);
+
+    // Track original message (with attachments) for persistence
     if (useInternalConversations) {
-        newMessages.push(userMessage);
+        newMessages.push(prepareMessageForPersistence(userMessageForPersistence));
     }
 
     // Non-streaming mode (with optional tool calling)
