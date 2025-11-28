@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
-import { createSnapshot, collectFiles, formatAsXML, estimateSnapshotTokens, DEFAULT_EXCLUDES, DEFAULT_EXTENSIONS } from '../snapshot.js';
+import { createSnapshot, collectFiles, formatAsXML, estimateSnapshotTokens, estimateWorkspaceTokens, DEFAULT_EXCLUDES, DEFAULT_EXTENSIONS } from '../snapshot.js';
 import { estimateTokens } from '../token-utils.js';
 import { createWorkspace } from '../workspace.js';
 import fs from 'fs/promises';
@@ -516,6 +516,88 @@ describe('Snapshot Tests', () => {
             expect(tokens).toBeGreaterThan(0);
             // Reasonable estimate for a test workspace with a few files
             expect(tokens).toBeGreaterThan(10);
+        });
+    });
+
+    describe('estimateWorkspaceTokens', () => {
+        test('should return token estimation with metadata', async () => {
+            const estimate = await estimateWorkspaceTokens(workspace.path);
+
+            expect(estimate).toHaveProperty('estimatedTokens');
+            expect(estimate).toHaveProperty('fileCount');
+            expect(estimate).toHaveProperty('omittedCount');
+            expect(estimate).toHaveProperty('totalSize');
+
+            expect(estimate.estimatedTokens).toBeGreaterThan(0);
+            expect(estimate.fileCount).toBeGreaterThan(0);
+            expect(typeof estimate.totalSize).toBe('number');
+        });
+
+        test('should respect exclude options like execute/chat', async () => {
+            const withTests = await estimateWorkspaceTokens(workspace.path, {
+                exclude: ['node_modules']
+            });
+
+            const withoutTests = await estimateWorkspaceTokens(workspace.path, {
+                exclude: ['node_modules', 'tests']
+            });
+
+            // Excluding tests should result in same or fewer files
+            expect(withoutTests.fileCount).toBeLessThanOrEqual(withTests.fileCount);
+        });
+
+        test('should respect include options', async () => {
+            const srcOnly = await estimateWorkspaceTokens(workspace.path, {
+                include: ['src/**/*']
+            });
+
+            const allFiles = await estimateWorkspaceTokens(workspace.path);
+
+            expect(srcOnly.fileCount).toBeLessThan(allFiles.fileCount);
+            expect(srcOnly.estimatedTokens).toBeLessThan(allFiles.estimatedTokens);
+        });
+
+        test('should respect extensions filter', async () => {
+            const tsOnly = await estimateWorkspaceTokens(workspace.path, {
+                extensions: ['.ts']
+            });
+
+            const allTypes = await estimateWorkspaceTokens(workspace.path);
+
+            expect(tsOnly.fileCount).toBeLessThan(allTypes.fileCount);
+        });
+
+        test('should correlate with createSnapshot metadata', async () => {
+            const estimate = await estimateWorkspaceTokens(workspace.path, {
+                include: ['src/**/*']
+            });
+
+            const { metadata } = await createSnapshot(workspace.path, {
+                include: ['src/**/*'],
+                includeMetadata: true
+            });
+
+            // File counts should match exactly
+            expect(estimate.fileCount).toBe(metadata.fileCount);
+            expect(estimate.omittedCount).toBe(metadata.omittedCount);
+
+            // Token estimates should be close (slight difference due to XML overhead calculation)
+            const tolerance = 0.2; // 20% tolerance
+            const diff = Math.abs(estimate.estimatedTokens - metadata.estimatedTokens);
+            expect(diff / metadata.estimatedTokens).toBeLessThan(tolerance);
+        });
+
+        test('should work with maxFileSize option', async () => {
+            const withSmallLimit = await estimateWorkspaceTokens(workspace.path, {
+                maxFileSize: 10
+            });
+
+            const withLargeLimit = await estimateWorkspaceTokens(workspace.path, {
+                maxFileSize: 1024 * 1024
+            });
+
+            // Small limit should have more omitted files
+            expect(withSmallLimit.omittedCount).toBeGreaterThan(withLargeLimit.omittedCount);
         });
     });
 

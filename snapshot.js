@@ -215,6 +215,43 @@ export function estimateSnapshotTokens(snapshot) {
 }
 
 /**
+ * Estimate workspace token count without creating full snapshot
+ * Uses same options as execute/chat for accurate estimation
+ * @param {string} workspaceDir - Workspace directory path
+ * @param {Object} options - Estimation options (same as createSnapshot)
+ * @param {string[]} options.extensions - File extensions to include (default: DEFAULT_EXTENSIONS)
+ * @param {number} options.maxFileSize - Max file size in bytes (default: 1MB)
+ * @param {string[]} options.exclude - Patterns to exclude (default: DEFAULT_EXCLUDES)
+ * @param {string[]} options.include - Patterns to include (default: ['**\/*'])
+ * @param {boolean} options.respectGitignore - Respect .gitignore patterns (default: true)
+ * @returns {Promise<Object>} Token estimation with metadata
+ */
+export async function estimateWorkspaceTokens(workspaceDir, options = {}) {
+    const { files, omitted } = await collectFiles(workspaceDir, options);
+
+    // Calculate total content size
+    let totalSize = 0;
+    for (const file of files) {
+        totalSize += file.size;
+    }
+
+    // Estimate tokens from actual content (more accurate than size-based)
+    // Include XML overhead: <file path="...">...</file> per file
+    const xmlOverheadPerFile = 30; // approximate chars for XML tags
+    let totalChars = 0;
+    for (const file of files) {
+        totalChars += file.content.length + xmlOverheadPerFile + file.path.length;
+    }
+
+    return {
+        estimatedTokens: Math.ceil(totalChars / 4), // ~4 chars per token
+        fileCount: files.length,
+        omittedCount: omitted.length,
+        totalSize
+    };
+}
+
+/**
  * Create workspace snapshot in XML format
  * @param {string} workspaceDir - Workspace directory path
  * @param {Object} options - Snapshot options

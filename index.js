@@ -46,6 +46,7 @@ import {
     collectFiles,
     formatAsXML,
     estimateSnapshotTokens,
+    estimateWorkspaceTokens,
     DEFAULT_EXCLUDES,
     DEFAULT_EXTENSIONS
 } from './snapshot.js';
@@ -99,6 +100,7 @@ sigrid.createSnapshot = createSnapshot;
 sigrid.collectFiles = collectFiles;
 sigrid.formatAsXML = formatAsXML;
 sigrid.estimateSnapshotTokens = estimateSnapshotTokens;
+sigrid.estimateWorkspaceTokens = estimateWorkspaceTokens;
 sigrid.DEFAULT_EXCLUDES = DEFAULT_EXCLUDES;
 sigrid.DEFAULT_EXTENSIONS = DEFAULT_EXTENSIONS;
 sigrid.estimateTokens = estimateTokens;
@@ -143,6 +145,7 @@ export {
     collectFiles,
     formatAsXML,
     estimateSnapshotTokens,
+    estimateWorkspaceTokens,
     DEFAULT_EXCLUDES,
     DEFAULT_EXTENSIONS,
     estimateTokens,
