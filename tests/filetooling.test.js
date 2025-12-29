@@ -85,7 +85,8 @@ describe('Filetooling', () => {
             expect(fileTools).toHaveLength(3);
             expect(fileTools).toContain(readFileTool);
             expect(fileTools).toContain(listDirTool);
-            expect(fileTools).toContain(writeFileTool);
+            // megaWriterTool replaces writeFileTool for flexibility (Issue #6)
+            expect(fileTools).toContain(megaWriterTool);
         });
 
         test('megaWriterTool has correct structure with summary field', () => {

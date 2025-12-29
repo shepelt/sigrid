@@ -266,7 +266,11 @@ export class SigridBuilder {
         // Handle enableMegawriter option - batch file writing in single turn
         if (finalOptions.enableMegawriter) {
             const customTools = finalOptions.tools || [];
-            finalOptions.tools = [megaWriterTool, ...customTools];
+            // Only add megaWriterTool if not already present (e.g., via fileTools)
+            const hasMegawriter = customTools.some(t =>
+                t.name === 'write_multiple_files' || t.function?.name === 'write_multiple_files'
+            );
+            finalOptions.tools = hasMegawriter ? customTools : [megaWriterTool, ...customTools];
 
             // Set tool_choice to required for optimal performance (skip LLM thinking time)
             // Format depends on provider:

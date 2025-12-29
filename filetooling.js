@@ -470,4 +470,6 @@ export async function executeFileTool(toolName, args, progressCallback = null, w
 }
 
 // Export all tools as array for convenience
-export const fileTools = [readFileTool, listDirTool, writeFileTool];
+// Uses megaWriterTool instead of writeFileTool for flexibility (can write 1 or more files)
+// This also prevents duplicate tools when used with enableMegawriter option
+export const fileTools = [readFileTool, listDirTool, megaWriterTool];
