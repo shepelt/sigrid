@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
 import { createSnapshot } from './snapshot.js';
-import { getStaticContextPrompt, getStaticContextWithMegawriterPrompt } from './prompts.js';
+import { getStaticContextPrompt, getStaticContextWithMegawriterPrompt, getStaticContextWithFileToolsPrompt } from './prompts.js';
 import { executeStatic } from './llm-static.js';
 
 /**
@@ -302,7 +302,10 @@ export class Workspace {
         // Smart prompt selection based on tool usage
         let systemPrompt;
 
-        if (options.enableMegawriter) {
+        if (useFileTools) {
+            // File tools mode: read_file, edit_file, write_file
+            systemPrompt = getStaticContextWithFileToolsPrompt();
+        } else if (options.enableMegawriter) {
             // Megawriter mode: Batch file writing in single turn
             systemPrompt = getStaticContextWithMegawriterPrompt();
         } else {
@@ -312,14 +315,18 @@ export class Workspace {
 
         // Construct final options (merge user options with static mode requirements)
         // Note: builder.execute will handle tool merging based on enableMegawriter flag
+        const snapshotPrompt = useFileTools
+            ? ['Here are the files in the workspace. Use read_file to view contents:', snapshot]
+            : ['Here is the full codebase for context:', snapshot];
+
         const finalOptions = {
             ...options,  // Keep all user options including enableMegawriter, tools, tool_choice
             workspace: this.path,
             instructions: [...(options.instructions || []), systemPrompt],
-            prompts: ['Here is the full codebase for context:', snapshot],
+            prompts: snapshotPrompt,
             saveAssistantMessage: false,  // We'll save compact version ourselves
             streamCallback,  // Use wrapped callback if streaming
-            progressCallback: wrappedProgressCallback,  // Use wrapped callback to track megawriter files
+            progressCallback: wrappedProgressCallback,  // Use wrapped callback to track tool files
             // Note: conversationPersistence is optional
             // - If provided: uses internal tracking (efficient, fresh snapshots)
             // - If not provided: not supported in static mode (no server-side conversations)
