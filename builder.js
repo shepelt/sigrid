@@ -1,6 +1,6 @@
 import { execute as executeDynamic } from './llm-dynamic.js';
 import { executeStatic } from './llm-static.js';
-import { megaWriterTool, fileTools } from './filetooling.js';
+import { megaWriterTool, fileTools, editFileTool } from './filetooling.js';
 
 /**
  * Fluent builder for Sigrid LLM execution
@@ -190,6 +190,18 @@ export class SigridBuilder {
     }
 
     /**
+     * Enable hybrid mode: snapshot context + edit_file tool only
+     * - Uses full snapshot for file contents (like megawriter)
+     * - Uses edit_file for surgical edits (no full rewrites)
+     * - Best for iterative edits on existing files
+     * @returns {SigridBuilder} this for chaining
+     */
+    enableEditTool() {
+        this.options.enableEditTool = true;
+        return this;
+    }
+
+    /**
      * Add custom tools (in addition to or instead of file tools)
      * @param {Array} toolsArray - Array of tool definitions
      * @returns {SigridBuilder} this for chaining
@@ -283,6 +295,17 @@ export class SigridBuilder {
      */
     async execute(prompt, additionalOpts = {}) {
         const finalOptions = { ...this.options, ...additionalOpts };
+
+        // Handle enableEditTool option - snapshot context + edit_file only (hybrid mode)
+        if (finalOptions.enableEditTool) {
+            const customTools = finalOptions.tools || [];
+            // Only add editFileTool if not already present
+            const hasEdit = customTools.some(t =>
+                t.name === 'edit_file' || t.function?.name === 'edit_file'
+            );
+            finalOptions.tools = hasEdit ? customTools : [editFileTool, ...customTools];
+            // Don't delete flag - workspace.js needs it for prompt selection
+        }
 
         // Handle enableFileTools option - add file tools (read, list, write, edit)
         if (finalOptions.enableFileTools) {

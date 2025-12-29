@@ -105,9 +105,28 @@ const EDIT_STEPS = [
     }
 ];
 
-async function runIterativeTest(mode, options) {
+async function runIterativeTest(mode, options, debug = false) {
     const workspace = await createWorkspace();
     await fs.writeFile(path.join(workspace.path, 'calculator.js'), TEST_FILE);
+
+    // Debug: show what snapshot would be sent
+    if (debug && options.enableFileTools) {
+        const snapshot = await workspace._getFileListSnapshot();
+        console.log('  DEBUG - File list snapshot:');
+        console.log('  ' + snapshot.replace(/\n/g, '\n  '));
+        console.log(`  DEBUG - Snapshot size: ${snapshot.length} chars (~${Math.ceil(snapshot.length/4)} tokens)`);
+
+        // Get system prompt size
+        const { getStaticContextWithFileToolsPrompt } = await import('../prompts.js');
+        const sysPrompt = getStaticContextWithFileToolsPrompt();
+        console.log(`  DEBUG - System prompt size: ${sysPrompt.length} chars (~${Math.ceil(sysPrompt.length/4)} tokens)`);
+
+        // Get tool definitions size
+        const { fileTools } = await import('../filetooling.js');
+        const toolsJson = JSON.stringify(fileTools);
+        console.log(`  DEBUG - Tool definitions size: ${toolsJson.length} chars (~${Math.ceil(toolsJson.length/4)} tokens)`);
+        console.log();
+    }
 
     const results = [];
     let conversationID = null;
@@ -141,11 +160,15 @@ async function runIterativeTest(mode, options) {
             const content = await fs.readFile(path.join(workspace.path, 'calculator.js'), 'utf-8');
             const verified = step.verify(content);
 
+            // Count LLM iterations (each tool call sequence = 1 iteration)
+            const iterations = toolCalls.length > 0 ? Math.ceil(toolCalls.length / 2) + 1 : 1;
+
             results.push({
                 step: step.name,
                 tokens,
                 time: elapsed,
                 toolCalls: toolCalls.map(t => t.name),
+                iterations,
                 verified
             });
 
@@ -179,7 +202,7 @@ async function runTest() {
     const fileToolsResults = await runIterativeTest('filetools', {
         enableFileTools: true,
         tool_choice: { type: 'auto' }
-    });
+    }, true);  // debug=true
 
     let fileToolsTotal = 0;
     for (const r of fileToolsResults) {
@@ -196,9 +219,34 @@ async function runTest() {
     console.log(`  TOTAL: ${fileToolsTotal} tokens`);
     console.log();
 
-    // Test 2: Snapshot Mode (baseline)
+    // Test 2: Hybrid Mode (snapshot + edit_file only)
     console.log('-'.repeat(70));
-    console.log('MODE 2: SNAPSHOT (baseline, no file tools)');
+    console.log('MODE 2: HYBRID (snapshot + edit_file only)');
+    console.log('-'.repeat(70));
+
+    const hybridResults = await runIterativeTest('hybrid', {
+        enableEditTool: true,
+        tool_choice: { type: 'auto' }
+    });
+
+    let hybridTotal = 0;
+    for (const r of hybridResults) {
+        if (r.error) {
+            console.log(`  ${r.step}: ERROR - ${r.error}`);
+        } else {
+            console.log(`  ${r.step}:`);
+            console.log(`    Tokens: ${r.tokens}, Time: ${(r.time/1000).toFixed(1)}s`);
+            console.log(`    Tools: ${r.toolCalls.join(' -> ') || 'none'}`);
+            console.log(`    Verified: ${r.verified ? '✓' : '✗'}`);
+            hybridTotal += r.tokens;
+        }
+    }
+    console.log(`  TOTAL: ${hybridTotal} tokens`);
+    console.log();
+
+    // Test 3: Snapshot Mode (baseline)
+    console.log('-'.repeat(70));
+    console.log('MODE 3: SNAPSHOT (baseline, megawriter)');
     console.log('-'.repeat(70));
 
     const snapshotResults = await runIterativeTest('snapshot', {
@@ -226,22 +274,26 @@ async function runTest() {
     console.log('='.repeat(70));
     console.log();
     console.log(`File Tools Total: ${fileToolsTotal} tokens`);
+    console.log(`Hybrid Total:     ${hybridTotal} tokens`);
     console.log(`Snapshot Total:   ${snapshotTotal} tokens`);
+    console.log();
 
-    if (fileToolsTotal > 0 && snapshotTotal > 0) {
-        const diff = snapshotTotal - fileToolsTotal;
+    // Compare hybrid vs snapshot (should be lower)
+    if (hybridTotal > 0 && snapshotTotal > 0) {
+        const diff = snapshotTotal - hybridTotal;
         const pct = ((diff / snapshotTotal) * 100).toFixed(1);
         if (diff > 0) {
-            console.log(`Savings:          ${diff} tokens (${pct}% reduction)`);
+            console.log(`Hybrid vs Snapshot: ${diff} tokens saved (${pct}% reduction) ✓`);
         } else {
-            console.log(`Overhead:         ${-diff} tokens (${-pct}% more)`);
+            console.log(`Hybrid vs Snapshot: ${-diff} tokens MORE (${-pct}% overhead)`);
         }
     }
 
     // Token growth analysis
     console.log();
-    console.log('Token Growth Analysis (should stay flat, not accumulate):');
+    console.log('Token per Step (should stay flat):');
     console.log('  File Tools:', fileToolsResults.filter(r => !r.error).map(r => r.tokens).join(' -> '));
+    console.log('  Hybrid:    ', hybridResults.filter(r => !r.error).map(r => r.tokens).join(' -> '));
     console.log('  Snapshot:  ', snapshotResults.filter(r => !r.error).map(r => r.tokens).join(' -> '));
 
     console.log();

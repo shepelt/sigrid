@@ -253,11 +253,17 @@ export async function executeStatic(prompt, opts = {}) {
                         opts.workspace
                     );
 
-                    // Add tool result to messages
+                    // Add tool result to messages (truncate large results to save tokens)
+                    let resultContent = JSON.stringify(toolResult);
+                    const maxResultLength = opts.maxToolResultLength || 8000; // ~2000 tokens
+                    if (resultContent.length > maxResultLength) {
+                        const truncated = resultContent.slice(0, maxResultLength);
+                        resultContent = truncated + `\n...[truncated, ${resultContent.length - maxResultLength} chars omitted]`;
+                    }
                     messages.push({
                         role: "tool",
                         tool_call_id: toolCall.id,
-                        content: JSON.stringify(toolResult)
+                        content: resultContent
                     });
                 } catch (err) {
                     // Add error result
@@ -457,11 +463,17 @@ export async function executeStatic(prompt, opts = {}) {
                     opts.workspace
                 );
 
-                // Add tool result to messages
+                // Add tool result to messages (truncate large results to save tokens)
+                let resultContent = JSON.stringify(toolResult);
+                const maxResultLength = opts.maxToolResultLength || 8000;
+                if (resultContent.length > maxResultLength) {
+                    const truncated = resultContent.slice(0, maxResultLength);
+                    resultContent = truncated + `\n...[truncated, ${resultContent.length - maxResultLength} chars omitted]`;
+                }
                 messages.push({
                     role: "tool",
                     tool_call_id: toolCall.id,
-                    content: JSON.stringify(toolResult)
+                    content: resultContent
                 });
             } catch (err) {
                 // Add error result

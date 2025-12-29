@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
 import { createSnapshot } from './snapshot.js';
-import { getStaticContextPrompt, getStaticContextWithMegawriterPrompt, getStaticContextWithFileToolsPrompt } from './prompts.js';
+import { getStaticContextPrompt, getStaticContextWithMegawriterPrompt, getStaticContextWithFileToolsPrompt, getStaticContextWithEditToolPrompt } from './prompts.js';
 import { executeStatic } from './llm-static.js';
 
 /**
@@ -301,8 +301,12 @@ export class Workspace {
 
         // Smart prompt selection based on tool usage
         let systemPrompt;
+        const useEditTool = options.enableEditTool;
 
-        if (useFileTools) {
+        if (useEditTool) {
+            // Hybrid mode: snapshot context + edit_file only (best of both worlds)
+            systemPrompt = getStaticContextWithEditToolPrompt();
+        } else if (useFileTools) {
             // File tools mode: read_file, edit_file, write_file
             systemPrompt = getStaticContextWithFileToolsPrompt();
         } else if (options.enableMegawriter) {
