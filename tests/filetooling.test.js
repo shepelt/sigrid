@@ -16,6 +16,7 @@ import {
     writeFileTool,
     megaWriterTool,
     editFileTool,
+    editMultipleFilesTool,
     fileTools,
     clearFileReadTracking
 } from '../filetooling.js';
@@ -91,8 +92,8 @@ describe('Filetooling', () => {
             expect(fileTools).toContain(listDirTool);
             // megaWriterTool replaces writeFileTool for flexibility (Issue #6)
             expect(fileTools).toContain(megaWriterTool);
-            // editFileTool added for Issue #7
-            expect(fileTools).toContain(editFileTool);
+            // editMultipleFilesTool (megaeditor) for batched edits
+            expect(fileTools).toContain(editMultipleFilesTool);
         });
 
         test('editFileTool has correct structure', () => {
@@ -145,10 +146,16 @@ describe('Filetooling', () => {
             const fileContent = await fs.readFile(filePath, 'utf8');
             expect(fileContent).toBe(testContent);
 
-            // Verify progress callbacks
-            expect(progressCallbacks).toHaveLength(2);
+            // Verify progress callbacks (start, FILE_STREAMING_END, succeed)
+            expect(progressCallbacks).toHaveLength(3);
             expect(progressCallbacks[0]).toEqual({ action: 'start', message: 'Writing file...' });
-            expect(progressCallbacks[1]).toEqual({ action: 'succeed', message: 'File written successfully' });
+            expect(progressCallbacks[1].action).toBe('FILE_STREAMING_END');
+            expect(progressCallbacks[1].message).toMatchObject({
+                path: testFile,
+                action: 'write',
+                isNewFile: true
+            });
+            expect(progressCallbacks[2]).toEqual({ action: 'succeed', message: 'File written successfully' });
         });
 
         test('handleReadFile reads existing file with line numbers', async () => {
@@ -258,10 +265,15 @@ describe('Filetooling', () => {
                 content: testContent
             }, mockProgressCallback);
 
-            expect(progressCallbacks).toEqual([
-                { action: 'start', message: 'Writing file...' },
-                { action: 'succeed', message: 'File written successfully' }
-            ]);
+            expect(progressCallbacks).toHaveLength(3);
+            expect(progressCallbacks[0]).toEqual({ action: 'start', message: 'Writing file...' });
+            expect(progressCallbacks[1].action).toBe('FILE_STREAMING_END');
+            expect(progressCallbacks[1].message).toMatchObject({
+                path: 'progress-test.txt',
+                action: 'write',
+                isNewFile: true
+            });
+            expect(progressCallbacks[2]).toEqual({ action: 'succeed', message: 'File written successfully' });
         });
 
         test('progress callback receives fail action for errors', async () => {
@@ -310,10 +322,11 @@ describe('Filetooling', () => {
             expect(result.ok).toBe(true);
             expect(result.path).toBe(testFile);
 
-            // Verify progress callback was called
-            expect(progressCallbacks).toHaveLength(2);
+            // Verify progress callback was called (start, FILE_STREAMING_END, succeed)
+            expect(progressCallbacks).toHaveLength(3);
             expect(progressCallbacks[0].action).toBe('start');
-            expect(progressCallbacks[1].action).toBe('succeed');
+            expect(progressCallbacks[1].action).toBe('FILE_STREAMING_END');
+            expect(progressCallbacks[2].action).toBe('succeed');
         });
 
         test('executeFileTool throws error for unknown tool', async () => {

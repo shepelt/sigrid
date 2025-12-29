@@ -397,7 +397,8 @@ export async function handleWriteFile(args = {}, progressCallback = null, worksp
         }
 
         const abs = assertInsideSandbox(filepath, workspacePath);
-        
+        const fileExistedBefore = await exists(abs);
+
         // 확장자 제한
         const ext = path.extname(abs).toLowerCase();
         if (!WRITE_ALLOWED_EXTS.includes(ext)) {
@@ -457,9 +458,21 @@ export async function handleWriteFile(args = {}, progressCallback = null, worksp
         await fs.rename(tmp, abs);
         const stat = await fs.stat(abs);
 
+        const effectiveRootPath = workspacePath != null ? path.resolve(workspacePath) : sandboxRootPath;
+        const relativePath = path.relative(effectiveRootPath, abs);
+
+        // Emit FILE_STREAMING_END for tracking in toolFilesWritten
+        if (progressCallback) {
+            progressCallback('FILE_STREAMING_END', {
+                path: relativePath,
+                action: 'write',
+                fullContent: finalContent.toString('utf-8'),
+                isNewFile: !fileExistedBefore
+            });
+        }
+
         if (progressCallback) progressCallback('succeed', 'File written successfully');
 
-        const effectiveRootPath = workspacePath != null ? path.resolve(workspacePath) : sandboxRootPath;
         return {
             ok: true,
             path: path.relative(effectiveRootPath, abs),
@@ -834,6 +847,26 @@ export async function handleEditFile(args = {}, progressCallback = null, workspa
             ? ` (matched via ${matchInfo.strategy})`
             : '';
         if (progressCallback) progressCallback('succeed', `Replaced ${replacementCount} occurrence(s)${strategyMsg}`);
+
+        // Calculate line number where match occurred (1-based)
+        const matchIndex = content.indexOf(matchInfo.match);
+        const lineNumber = matchIndex >= 0
+            ? content.substring(0, matchIndex).split('\n').length
+            : 1;
+
+        // Emit FILE_STREAMING_END for tracking in toolFilesWritten
+        if (progressCallback) {
+            progressCallback('FILE_STREAMING_END', {
+                path: relativePath,
+                action: 'edit',
+                oldString: old_string,
+                newString: new_string,
+                lineNumber,
+                fullContent: newContent,
+                replacements: replacementCount,
+                matchStrategy: matchInfo.strategy
+            });
+        }
 
         return {
             ok: true,
