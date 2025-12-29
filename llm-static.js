@@ -278,16 +278,56 @@ export async function executeStatic(prompt, opts = {}) {
                 }
             }
 
+            // Context pruning: After write/edit operations, summarize read_file results
+            // to reduce context bloat in subsequent iterations
+            const hasWriteOrEdit = toolCalls.some(tc => {
+                const name = tc.function.name;
+                return name === 'edit_file' || name === 'write_file' || name === 'write_multiple_files';
+            });
+
+            if (hasWriteOrEdit && opts.enableContextPruning !== false) {
+                // Find and summarize read_file tool results
+                for (let i = 0; i < messages.length; i++) {
+                    const msg = messages[i];
+                    if (msg.role === 'tool' && msg.content) {
+                        // Check if this is a read_file result (contains file content)
+                        // Read results typically have "content" field with file content
+                        try {
+                            const result = JSON.parse(msg.content);
+                            if (result.content && typeof result.content === 'string' && result.content.length > 200) {
+                                // Replace with summary to reduce context
+                                const lines = result.content.split('\n').length;
+                                messages[i] = {
+                                    ...msg,
+                                    content: JSON.stringify({
+                                        ...result,
+                                        content: `[file content: ${lines} lines, ${result.content.length} chars - content pruned after edit]`
+                                    })
+                                };
+                            }
+                        } catch {
+                            // Not JSON, ignore
+                        }
+                    }
+                }
+            }
+
             // Make follow-up request with tool results
+            // Optimization: Strip tool definitions from follow-up requests to reduce token usage
+            // The LLM already knows the tools from the initial request, and most APIs cache this
             const followupParams = {
                 model,
                 messages,
-                ...requestParams  // Preserve other params (tools, max_tokens, etc.)
+                max_tokens: requestParams.max_tokens
             };
 
-            // Remove tool_choice from follow-up requests to allow LLM to decide whether to continue
-            // This prevents infinite loops where tool_choice forces the same tool to be called repeatedly
-            delete followupParams.tool_choice;
+            // Experimental: Strip tools from follow-up to reduce tokens
+            // This only works if the API/model can still make tool calls based on conversation context
+            // Set stripToolsFromFollowup: true to test this optimization
+            if (!opts.stripToolsFromFollowup && requestParams.tools) {
+                followupParams.tools = requestParams.tools;
+            }
+            // Note: tool_choice is intentionally NOT included to let LLM decide whether to continue
 
             // Emit tool call end event
             if (opts.progressCallback) {

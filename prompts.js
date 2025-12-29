@@ -468,42 +468,50 @@ const STATIC_CONTEXT_WITH_FILE_TOOLS_PROMPT = `You are a coding assistant with a
    - Use to see current code before making changes
    - Only read files you need to modify
 
-2. **edit_file** - Make targeted edits (preferred for modifications)
-   - Parameters: filepath, old_string, new_string, replace_all
-   - Replaces exact text matches
-   - Much more efficient than rewriting entire files
-   - Supports fuzzy matching for whitespace differences
+2. **edit_multiple_files** - Make multiple targeted edits in ONE call (PREFERRED)
+   - Parameters: edits (array of {filepath, old_string, new_string, replace_all, description})
+   - Batch ALL edits into a single tool call
+   - Much more efficient than multiple edit_file calls
 
-3. **write_file** - Create or overwrite files
+3. **write_multiple_files** - Create or overwrite multiple files
    - Use for new files only
-   - For existing files, prefer edit_file
+   - For existing files, prefer edit_multiple_files
 
 4. **list_dir** - List directory contents
    - Use to explore file structure
 
+## CRITICAL: Use edit_multiple_files for ALL Edits
+
+After reading a file, you MUST use edit_multiple_files to make ALL edits in ONE tool call:
+
+Pattern:
+1. read_file to see the file
+2. edit_multiple_files with ALL edits in the edits array
+3. Done!
+
+Example - renaming "foo" to "bar" AND "baz" to "qux":
+
+\`\`\`json
+{
+  "edits": [
+    {"filepath": "config.js", "old_string": "foo", "new_string": "bar", "replace_all": true},
+    {"filepath": "config.js", "old_string": "baz", "new_string": "qux", "replace_all": true}
+  ]
+}
+\`\`\`
+
+WRONG (3 round trips):
+- read_file -> edit_file(foo->bar) -> edit_file(baz->qux)
+
+RIGHT (2 round trips):
+- read_file -> edit_multiple_files([{foo->bar}, {baz->qux}])
+
 ## Best Practices
 
-1. **Read once, edit multiple times**: Read a file once, then make all edits
-2. **Use edit_file for changes**: More efficient than write_file for existing files
+1. **Read once, batch all edits**: Read a file once, then use edit_multiple_files
+2. **Use replace_all for renames**: When renaming variables/functions across a file
 3. **Be precise with old_string**: Include enough context to uniquely identify the location
-4. **Batch tool calls**: Call MULTIPLE tools in ONE response when possible
-5. **Use replace_all for renames**: When renaming variables/functions, use replace_all: true
-
-## IMPORTANT: Batch Multiple Tool Calls
-
-You can call MULTIPLE tools in a SINGLE response. Do this whenever possible:
-- After reading a file, make ALL needed edits in ONE response
-- Don't wait for each edit to complete before making the next
-
-Example - if you need to rename "foo" to "bar" and "baz" to "qux":
-BAD: read_file -> edit_file(foo->bar) -> edit_file(baz->qux) [3 round trips]
-GOOD: read_file, then in NEXT response: edit_file(foo->bar) AND edit_file(baz->qux) [2 round trips]
-
-## Example Workflow
-
-1. read_file to see current code
-2. In ONE response: all edit_file calls needed (batch them!)
-3. Done - don't read the file again to verify
+4. **Don't re-read after editing**: Trust that edits succeeded
 `;
 
 export function getStaticContextWithFileToolsPrompt() {

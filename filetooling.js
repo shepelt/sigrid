@@ -154,6 +154,34 @@ export const editFileTool = {
     }
 };
 
+export const editMultipleFilesTool = {
+    type: "function",
+    name: "edit_multiple_files",
+    description:
+        "Make multiple targeted edits across one or more files in a single call. Use this to batch all edits at once instead of calling edit_file multiple times. Much more efficient for multi-edit operations. Files must be read first.",
+    parameters: {
+        type: "object",
+        properties: {
+            edits: {
+                type: "array",
+                description: "Array of edits to apply",
+                items: {
+                    type: "object",
+                    properties: {
+                        filepath: { type: "string", description: "Relative path from project root" },
+                        old_string: { type: "string", description: "The exact text to find and replace" },
+                        new_string: { type: "string", description: "The text to replace it with" },
+                        replace_all: { type: "boolean", default: false, description: "Replace all occurrences" },
+                        description: { type: "string", description: "Brief description of this edit (optional)" }
+                    },
+                    required: ["filepath", "old_string", "new_string"]
+                }
+            }
+        },
+        required: ["edits"]
+    }
+};
+
 // Utility functions
 export function setSandboxRoot(root) {
     sandboxRootPath = path.resolve(root);
@@ -821,6 +849,105 @@ export async function handleEditFile(args = {}, progressCallback = null, workspa
     }
 }
 
+/**
+ * Handle edit_multiple_files - batch multiple edits in a single call
+ * This is the "megaeditor" - reduces API round trips by batching all edits
+ */
+export async function handleEditMultipleFiles(args = {}, progressCallback = null, workspacePath = null) {
+    try {
+        if (progressCallback) progressCallback('start', 'Applying multiple edits...');
+
+        const { edits = [] } = args;
+
+        if (!Array.isArray(edits)) {
+            throw new Error("'edits' must be an array");
+        }
+
+        if (edits.length === 0) {
+            throw new Error("'edits' array cannot be empty");
+        }
+
+        const results = [];
+        let successCount = 0;
+        let failCount = 0;
+
+        // Group edits by file for efficient processing
+        // When multiple edits target the same file, we need to apply them sequentially
+        // and refresh file content between edits
+        for (const edit of edits) {
+            try {
+                // Emit edit start event
+                if (progressCallback) {
+                    progressCallback('EDIT_START', {
+                        path: edit.filepath,
+                        description: edit.description || `${edit.old_string.slice(0, 30)}... → ${edit.new_string.slice(0, 30)}...`
+                    });
+                }
+
+                // Use the existing handleEditFile logic
+                const result = await handleEditFile(
+                    {
+                        filepath: edit.filepath,
+                        old_string: edit.old_string,
+                        new_string: edit.new_string,
+                        replace_all: edit.replace_all || false
+                    },
+                    null, // No individual progress callbacks
+                    workspacePath
+                );
+
+                results.push({
+                    ...result,
+                    filepath: edit.filepath,
+                    description: edit.description
+                });
+                successCount++;
+
+                // Emit edit end event
+                if (progressCallback) {
+                    progressCallback('EDIT_END', {
+                        path: edit.filepath,
+                        success: true,
+                        replacements: result.replacements
+                    });
+                }
+            } catch (error) {
+                failCount++;
+                results.push({
+                    ok: false,
+                    filepath: edit.filepath,
+                    error: error.message,
+                    description: edit.description
+                });
+
+                // Emit edit end event with error
+                if (progressCallback) {
+                    progressCallback('EDIT_END', {
+                        path: edit.filepath,
+                        success: false,
+                        error: error.message
+                    });
+                }
+            }
+        }
+
+        const summary = `Applied ${successCount} edit(s)${failCount > 0 ? `, ${failCount} failed` : ''}`;
+        if (progressCallback) progressCallback('succeed', summary);
+
+        return {
+            ok: failCount === 0,
+            summary,
+            totalEdits: edits.length,
+            successCount,
+            failCount,
+            results
+        };
+    } catch (error) {
+        if (progressCallback) progressCallback('fail', `Error applying edits: ${error.message}`);
+        throw error;
+    }
+}
+
 // Tool execution dispatcher
 export async function executeFileTool(toolName, args, progressCallback = null, workspacePath = null) {
     switch (toolName) {
@@ -834,6 +961,8 @@ export async function executeFileTool(toolName, args, progressCallback = null, w
             return await handleWriteMultipleFiles(args, progressCallback, workspacePath);
         case "edit_file":
             return await handleEditFile(args, progressCallback, workspacePath);
+        case "edit_multiple_files":
+            return await handleEditMultipleFiles(args, progressCallback, workspacePath);
         default:
             throw new Error(`Unknown tool: ${toolName}`);
     }
@@ -841,5 +970,6 @@ export async function executeFileTool(toolName, args, progressCallback = null, w
 
 // Export all tools as array for convenience
 // Uses megaWriterTool instead of writeFileTool for flexibility (can write 1 or more files)
+// Uses editMultipleFilesTool (megaeditor) instead of editFileTool for batched edits
 // This also prevents duplicate tools when used with enableMegawriter option
-export const fileTools = [readFileTool, listDirTool, megaWriterTool, editFileTool];
+export const fileTools = [readFileTool, listDirTool, megaWriterTool, editMultipleFilesTool];
