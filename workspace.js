@@ -185,6 +185,8 @@ export class Workspace {
      * @param {boolean} options.stream - Enable streaming (static mode only, not compatible with tools)
      * @param {Function} options.streamCallback - Stream callback (static mode only): (chunk: string) => void
      * @param {boolean} options.enableMegawriter - Enable write_multiple_files tool in static mode for batch file writing
+     * @param {boolean} options.enableFileTools - Enable file tools (read_file, list_dir, write_file, edit_file) for targeted edits
+     * @param {boolean} options.enableWriteFileTool - Alias for enableFileTools (deprecated)
      * @param {Array} options.tools - Custom tool definitions
      * @param {Object|string} options.tool_choice - Tool choice: "auto", "none", "required", or {type: "auto"} (Claude format)
      * @param {Function} options.toolExecutor - Custom tool executor function (toolName, args) => Promise<result>

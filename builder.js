@@ -1,6 +1,6 @@
 import { execute as executeDynamic } from './llm-dynamic.js';
 import { executeStatic } from './llm-static.js';
-import { megaWriterTool } from './filetooling.js';
+import { megaWriterTool, fileTools } from './filetooling.js';
 
 /**
  * Fluent builder for Sigrid LLM execution
@@ -169,6 +169,27 @@ export class SigridBuilder {
     }
 
     /**
+     * Enable file tools (read_file, list_dir, write_file, edit_file)
+     * - Enables targeted file operations for reduced token usage
+     * - edit_file uses search/replace with fuzzy matching
+     * - Requires reading a file before editing (staleness tracking)
+     * @returns {SigridBuilder} this for chaining
+     */
+    enableFileTools() {
+        this.options.enableFileTools = true;
+        return this;
+    }
+
+    /**
+     * Alias for enableFileTools() - enables all file tools
+     * @returns {SigridBuilder} this for chaining
+     * @deprecated Use enableFileTools() instead
+     */
+    enableWriteFileTool() {
+        return this.enableFileTools();
+    }
+
+    /**
      * Add custom tools (in addition to or instead of file tools)
      * @param {Array} toolsArray - Array of tool definitions
      * @returns {SigridBuilder} this for chaining
@@ -262,6 +283,16 @@ export class SigridBuilder {
      */
     async execute(prompt, additionalOpts = {}) {
         const finalOptions = { ...this.options, ...additionalOpts };
+
+        // Handle enableFileTools option - add file tools (read, list, write, edit)
+        if (finalOptions.enableFileTools) {
+            const customTools = finalOptions.tools || [];
+            // Merge fileTools with custom tools, avoiding duplicates
+            const existingNames = new Set(customTools.map(t => t.name || t.function?.name));
+            const newTools = fileTools.filter(t => !existingNames.has(t.name || t.function?.name));
+            finalOptions.tools = [...newTools, ...customTools];
+            delete finalOptions.enableFileTools;
+        }
 
         // Handle enableMegawriter option - batch file writing in single turn
         if (finalOptions.enableMegawriter) {
