@@ -3,7 +3,8 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 
 // Constants
-const MAX_BYTES = 64 * 1024;
+const MAX_READ_LINES = 2000;
+const MAX_LINE_LENGTH = 2000;
 const LIST_MAX_ENTRIES = 500;
 const LIST_MAX_DEPTH = 3;
 const WRITE_MAX_BYTES = 256 * 1024;
@@ -15,18 +16,55 @@ const WRITE_ALLOWED_EXTS = [
 // Global sandbox root - will be set by setSandboxRoot
 let sandboxRootPath = path.resolve(process.cwd());
 
+// File read tracking for staleness detection
+// Maps filepath -> { mtimeMs, readAt } for files that have been read
+const fileReadTracker = new Map();
+
+/**
+ * Track that a file was read at a specific mtime
+ */
+function trackFileRead(filepath, mtimeMs) {
+    fileReadTracker.set(filepath, { mtimeMs, readAt: Date.now() });
+}
+
+/**
+ * Check if a file was read before and if it's stale
+ * Returns { wasRead, isStale, lastReadMtime, currentMtime }
+ */
+function checkFileStaleness(filepath, currentMtimeMs) {
+    const tracked = fileReadTracker.get(filepath);
+    if (!tracked) {
+        return { wasRead: false, isStale: false, lastReadMtime: null, currentMtime: currentMtimeMs };
+    }
+    const isStale = currentMtimeMs > tracked.mtimeMs;
+    return { wasRead: true, isStale, lastReadMtime: tracked.mtimeMs, currentMtime: currentMtimeMs };
+}
+
+/**
+ * Clear file read tracking (call when starting a new session)
+ */
+export function clearFileReadTracking() {
+    fileReadTracker.clear();
+}
+
+/**
+ * Get current tracking state (for debugging)
+ */
+export function getFileReadTrackingState() {
+    return Object.fromEntries(fileReadTracker);
+}
+
 // Tool definitions
 export const readFileTool = {
     type: "function",
     name: "read_file",
-    description: "Read a text-like file within the sandbox and return a UTF-8 preview.",
+    description: "Read a text file within the sandbox. Returns content with line numbers. Use offset/limit for large files.",
     parameters: {
         type: "object",
         properties: {
             filepath: { type: "string", description: "Relative path from project root" },
-            encoding: { type: "string", enum: ["utf-8"], default: "utf-8" },
-            start: { type: "integer", minimum: 0, default: 0 },
-            length: { type: "integer", minimum: 1, maximum: MAX_BYTES, default: MAX_BYTES }
+            offset: { type: "integer", minimum: 0, default: 0, description: "Line number to start from (0-based)" },
+            limit: { type: "integer", minimum: 1, maximum: MAX_READ_LINES, default: MAX_READ_LINES, description: "Maximum number of lines to read" }
         },
         required: ["filepath"]
     }
@@ -99,6 +137,23 @@ export const megaWriterTool = {
     }
 };
 
+export const editFileTool = {
+    type: "function",
+    name: "edit_file",
+    description:
+        "Edit a file by replacing specific text. Uses search/replace - finds old_string and replaces with new_string. More efficient than rewriting entire files. File must be read first.",
+    parameters: {
+        type: "object",
+        properties: {
+            filepath: { type: "string", description: "Relative path from project root" },
+            old_string: { type: "string", description: "The exact text to find and replace" },
+            new_string: { type: "string", description: "The text to replace it with" },
+            replace_all: { type: "boolean", default: false, description: "Replace all occurrences (default: first match only)" }
+        },
+        required: ["filepath", "old_string", "new_string"]
+    }
+};
+
 // Utility functions
 export function setSandboxRoot(root) {
     sandboxRootPath = path.resolve(root);
@@ -165,38 +220,66 @@ async function exists(p) {
     try { await fs.access(p); return true; } catch { return false; }
 }
 
+// Format line number with padding (cat -n style)
+function formatLineNumber(lineNum, maxLineNum) {
+    const width = String(maxLineNum).length;
+    return String(lineNum).padStart(width, ' ');
+}
+
 // Tool handlers with progress callback support
 export async function handleReadFile(args, progressCallback = null, workspacePath = null) {
-    const { filepath, encoding = "utf-8", start = 0, length = MAX_BYTES } = args;
+    const { filepath, offset = 0, limit = MAX_READ_LINES } = args;
 
     try {
         if (progressCallback) progressCallback('start', 'Reading file...');
 
         const abs = assertInsideSandbox(filepath, workspacePath);
         const stat = await fs.stat(abs);
-        const end = Math.min(start + length, stat.size);
-        const fh = await fs.open(abs, "r");
+        const content = await fs.readFile(abs, 'utf-8');
+        const allLines = content.split('\n');
+        const totalLines = allLines.length;
 
-        try {
-            const buf = Buffer.alloc(end - start);
-            await fh.read(buf, 0, buf.length, start);
-            const text = buf.toString(encoding);
+        // Track this file read for staleness detection
+        const effectiveRootPath = workspacePath != null ? path.resolve(workspacePath) : sandboxRootPath;
+        const relativePath = path.relative(effectiveRootPath, abs);
+        trackFileRead(relativePath, stat.mtimeMs);
 
-            if (progressCallback) progressCallback('succeed', 'File read successfully');
+        // Calculate line range
+        const startLine = Math.max(0, offset);
+        const endLine = Math.min(startLine + limit, totalLines);
+        const selectedLines = allLines.slice(startLine, endLine);
 
-            const effectiveRootPath = workspacePath != null ? path.resolve(workspacePath) : sandboxRootPath;
-            return {
-                ok: true,
-                path: path.relative(effectiveRootPath, abs),
-                size: stat.size,
-                start,
-                end,
-                truncated: end < stat.size,
-                preview: text
-            };
-        } finally {
-            if (fh) await fh.close();
+        // Format with line numbers (1-based for display)
+        const maxLineNum = endLine;
+        const formattedLines = selectedLines.map((line, idx) => {
+            const lineNum = startLine + idx + 1; // 1-based line number
+            const truncatedLine = line.length > MAX_LINE_LENGTH
+                ? line.substring(0, MAX_LINE_LENGTH) + '...'
+                : line;
+            return `${formatLineNumber(lineNum, maxLineNum)}| ${truncatedLine}`;
+        });
+
+        const formattedContent = formattedLines.join('\n');
+        const hasMore = endLine < totalLines;
+
+        if (progressCallback) progressCallback('succeed', 'File read successfully');
+
+        const result = {
+            ok: true,
+            path: relativePath,
+            totalLines,
+            startLine: startLine + 1, // 1-based for response
+            endLine,
+            truncated: hasMore,
+            content: formattedContent
+        };
+
+        // Add pagination hint if file has more lines
+        if (hasMore) {
+            result.hint = `File has more lines. Use offset=${endLine} to read beyond line ${endLine}.`;
         }
+
+        return result;
     } catch (error) {
         if (progressCallback) progressCallback('fail', `Error reading file: ${error.message}`);
         throw error;
@@ -453,6 +536,291 @@ export async function handleWriteMultipleFiles(args = {}, progressCallback = nul
     }
 }
 
+// ============================================================================
+// Fuzzy matching strategies for edit_file
+// Inspired by OpenCode/Cline - handles LLM imprecision with whitespace/indentation
+// ============================================================================
+
+/**
+ * Try to find old_string in content using multiple matching strategies.
+ * Returns { match: actualStringInContent, strategy: strategyName } or null if not found.
+ */
+function findWithFuzzyMatch(content, oldString) {
+    // Strategy 1: Exact match
+    if (content.includes(oldString)) {
+        return { match: oldString, strategy: 'exact' };
+    }
+
+    // Strategy 2: Line-trimmed match
+    // Trims each line but preserves line structure
+    const lineTrimmedResult = tryLineTrimmedMatch(content, oldString);
+    if (lineTrimmedResult) {
+        return { match: lineTrimmedResult, strategy: 'line-trimmed' };
+    }
+
+    // Strategy 3: Indentation-flexible match
+    // Removes leading indentation from both search and content blocks
+    const indentFlexResult = tryIndentationFlexibleMatch(content, oldString);
+    if (indentFlexResult) {
+        return { match: indentFlexResult, strategy: 'indentation-flexible' };
+    }
+
+    // Strategy 4: Whitespace-normalized match
+    // Normalizes all whitespace to single spaces
+    const wsNormalizedResult = tryWhitespaceNormalizedMatch(content, oldString);
+    if (wsNormalizedResult) {
+        return { match: wsNormalizedResult, strategy: 'whitespace-normalized' };
+    }
+
+    return null;
+}
+
+/**
+ * Strategy 2: Line-trimmed matching
+ * Trims whitespace from each line, finds match, returns original text
+ */
+function tryLineTrimmedMatch(content, oldString) {
+    const contentLines = content.split('\n');
+    const searchLines = oldString.split('\n').map(l => l.trim());
+    const searchJoined = searchLines.join('\n');
+
+    // Slide through content looking for trimmed match
+    for (let i = 0; i <= contentLines.length - searchLines.length; i++) {
+        const windowLines = contentLines.slice(i, i + searchLines.length);
+        const windowTrimmed = windowLines.map(l => l.trim()).join('\n');
+
+        if (windowTrimmed === searchJoined) {
+            // Return the original text from content (with original whitespace)
+            return windowLines.join('\n');
+        }
+    }
+    return null;
+}
+
+/**
+ * Strategy 3: Indentation-flexible matching
+ * Removes minimum indentation from both blocks before comparing
+ */
+function tryIndentationFlexibleMatch(content, oldString) {
+    const contentLines = content.split('\n');
+    const searchLines = oldString.split('\n');
+
+    // Calculate minimum indentation of search string
+    const searchMinIndent = getMinIndent(searchLines);
+    const searchNormalized = searchLines.map(l => l.slice(searchMinIndent)).join('\n');
+
+    // Slide through content
+    for (let i = 0; i <= contentLines.length - searchLines.length; i++) {
+        const windowLines = contentLines.slice(i, i + searchLines.length);
+        const windowMinIndent = getMinIndent(windowLines);
+        const windowNormalized = windowLines.map(l => l.slice(windowMinIndent)).join('\n');
+
+        if (windowNormalized === searchNormalized) {
+            return windowLines.join('\n');
+        }
+    }
+    return null;
+}
+
+/**
+ * Get minimum indentation (number of leading spaces) across non-empty lines
+ */
+function getMinIndent(lines) {
+    let min = Infinity;
+    for (const line of lines) {
+        if (line.trim().length === 0) continue; // Skip empty lines
+        const indent = line.match(/^(\s*)/)[1].length;
+        if (indent < min) min = indent;
+    }
+    return min === Infinity ? 0 : min;
+}
+
+/**
+ * Strategy 4: Whitespace-normalized matching
+ * Normalizes all whitespace to single spaces
+ */
+function tryWhitespaceNormalizedMatch(content, oldString) {
+    const normalizeWs = s => s.replace(/\s+/g, ' ').trim();
+    const searchNormalized = normalizeWs(oldString);
+
+    // This is trickier - we need to find the actual span in content
+    // Use a sliding window approach on the normalized form
+    const contentLines = content.split('\n');
+
+    // Try progressively larger windows
+    for (let windowSize = 1; windowSize <= contentLines.length; windowSize++) {
+        for (let i = 0; i <= contentLines.length - windowSize; i++) {
+            const windowLines = contentLines.slice(i, i + windowSize);
+            const windowText = windowLines.join('\n');
+            const windowNormalized = normalizeWs(windowText);
+
+            if (windowNormalized === searchNormalized) {
+                return windowText;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * Count occurrences using fuzzy matching
+ */
+function countFuzzyOccurrences(content, oldString, strategy) {
+    if (strategy === 'exact') {
+        return content.split(oldString).length - 1;
+    }
+    // For fuzzy strategies, we count line-based occurrences
+    // This is a simplified count - may not be 100% accurate for overlapping matches
+    let count = 0;
+    let remaining = content;
+    let match;
+    while ((match = findWithFuzzyMatch(remaining, oldString)) !== null) {
+        count++;
+        const idx = remaining.indexOf(match.match);
+        if (idx === -1) break;
+        remaining = remaining.slice(idx + match.match.length);
+        if (remaining.length === 0) break;
+    }
+    return count;
+}
+
+/**
+ * Replace using fuzzy matching
+ */
+function fuzzyReplace(content, oldString, newString, replaceAll, matchInfo) {
+    if (matchInfo.strategy === 'exact') {
+        if (replaceAll) {
+            return content.split(oldString).join(newString);
+        } else {
+            return content.replace(oldString, newString);
+        }
+    }
+
+    // For fuzzy matches, we need to handle indentation preservation
+    if (replaceAll) {
+        let result = content;
+        let match;
+        while ((match = findWithFuzzyMatch(result, oldString)) !== null) {
+            const adjustedNew = adjustIndentation(match.match, newString);
+            result = result.replace(match.match, adjustedNew);
+        }
+        return result;
+    } else {
+        const adjustedNew = adjustIndentation(matchInfo.match, newString);
+        return content.replace(matchInfo.match, adjustedNew);
+    }
+}
+
+/**
+ * Adjust new_string indentation to match the original matched text
+ */
+function adjustIndentation(originalMatch, newString) {
+    const originalLines = originalMatch.split('\n');
+    const newLines = newString.split('\n');
+
+    if (originalLines.length === 0 || newLines.length === 0) {
+        return newString;
+    }
+
+    // Get the indentation of the first line of original
+    const originalIndent = originalLines[0].match(/^(\s*)/)[1];
+    const newIndent = newLines[0].match(/^(\s*)/)[1];
+
+    // If new string has less indentation, add the difference
+    if (newIndent.length < originalIndent.length) {
+        const indentDiff = originalIndent.slice(0, originalIndent.length - newIndent.length);
+        return newLines.map(l => indentDiff + l).join('\n');
+    }
+
+    return newString;
+}
+
+// Handler for edit_file (search/replace)
+export async function handleEditFile(args = {}, progressCallback = null, workspacePath = null) {
+    try {
+        if (progressCallback) progressCallback('start', 'Editing file...');
+
+        const { filepath, old_string, new_string, replace_all = false } = args;
+
+        if (typeof filepath !== "string" || typeof old_string !== "string" || typeof new_string !== "string") {
+            throw new Error("Invalid 'filepath', 'old_string', or 'new_string'");
+        }
+
+        if (old_string === new_string) {
+            throw new Error("old_string and new_string must be different");
+        }
+
+        if (old_string.length === 0) {
+            throw new Error("old_string cannot be empty");
+        }
+
+        const abs = assertInsideSandbox(filepath, workspacePath);
+        const effectiveRootPath = workspacePath != null ? path.resolve(workspacePath) : sandboxRootPath;
+        const relativePath = path.relative(effectiveRootPath, abs);
+
+        // Check file staleness - require read before edit
+        const stat = await fs.stat(abs);
+        const staleness = checkFileStaleness(relativePath, stat.mtimeMs);
+
+        if (!staleness.wasRead) {
+            throw new Error(`File must be read before editing. Use read_file first to view the current content of '${relativePath}'.`);
+        }
+
+        if (staleness.isStale) {
+            throw new Error(`File '${relativePath}' has been modified since it was last read. Use read_file again to see current content before editing.`);
+        }
+
+        // Read current file content
+        const content = await fs.readFile(abs, 'utf-8');
+
+        // Try to find match using fuzzy strategies
+        const matchInfo = findWithFuzzyMatch(content, old_string);
+
+        if (!matchInfo) {
+            throw new Error(`old_string not found in file. No matches for the search text (tried exact, line-trimmed, indentation-flexible, and whitespace-normalized matching).`);
+        }
+
+        // Count occurrences
+        const occurrences = countFuzzyOccurrences(content, old_string, matchInfo.strategy);
+
+        if (occurrences > 1 && !replace_all) {
+            throw new Error(`old_string matches ${occurrences} locations. Use replace_all=true to replace all, or provide more context to match uniquely.`);
+        }
+
+        // Perform replacement
+        const newContent = fuzzyReplace(content, old_string, new_string, replace_all, matchInfo);
+        const replacementCount = replace_all ? occurrences : 1;
+
+        // Atomic write: tmp → rename
+        const rand = randomBytes(6).toString("hex");
+        const tmp = abs + ".tmp-" + rand;
+        await fs.writeFile(tmp, newContent, { encoding: "utf-8", flag: "w" });
+        await fs.rename(tmp, abs);
+
+        const newStat = await fs.stat(abs);
+
+        // Update tracking with new mtime after successful edit
+        trackFileRead(relativePath, newStat.mtimeMs);
+
+        const strategyMsg = matchInfo.strategy !== 'exact'
+            ? ` (matched via ${matchInfo.strategy})`
+            : '';
+        if (progressCallback) progressCallback('succeed', `Replaced ${replacementCount} occurrence(s)${strategyMsg}`);
+
+        return {
+            ok: true,
+            path: relativePath,
+            replacements: replacementCount,
+            matchStrategy: matchInfo.strategy,
+            size: newStat.size,
+            mtimeMs: newStat.mtimeMs
+        };
+    } catch (error) {
+        if (progressCallback) progressCallback('fail', `Error editing file: ${error.message}`);
+        throw error;
+    }
+}
+
 // Tool execution dispatcher
 export async function executeFileTool(toolName, args, progressCallback = null, workspacePath = null) {
     switch (toolName) {
@@ -464,6 +832,8 @@ export async function executeFileTool(toolName, args, progressCallback = null, w
             return await handleWriteFile(args, progressCallback, workspacePath);
         case "write_multiple_files":
             return await handleWriteMultipleFiles(args, progressCallback, workspacePath);
+        case "edit_file":
+            return await handleEditFile(args, progressCallback, workspacePath);
         default:
             throw new Error(`Unknown tool: ${toolName}`);
     }
@@ -472,4 +842,4 @@ export async function executeFileTool(toolName, args, progressCallback = null, w
 // Export all tools as array for convenience
 // Uses megaWriterTool instead of writeFileTool for flexibility (can write 1 or more files)
 // This also prevents duplicate tools when used with enableMegawriter option
-export const fileTools = [readFileTool, listDirTool, megaWriterTool];
+export const fileTools = [readFileTool, listDirTool, megaWriterTool, editFileTool];
