@@ -9,12 +9,15 @@ import {
     handleListDir,
     handleWriteFile,
     handleWriteMultipleFiles,
+    handleEditFile,
     executeFileTool,
     readFileTool,
     listDirTool,
     writeFileTool,
     megaWriterTool,
-    fileTools
+    editFileTool,
+    fileTools,
+    clearFileReadTracking
 } from '../filetooling.js';
 
 describe('Filetooling', () => {
@@ -33,6 +36,7 @@ describe('Filetooling', () => {
         originalCwd = process.cwd();
         setSandboxRoot(tempDir);
         progressCallbacks = []; // Reset progress callbacks
+        clearFileReadTracking(); // Reset file read tracking
     });
 
     afterEach(async () => {
@@ -82,11 +86,23 @@ describe('Filetooling', () => {
         });
 
         test('fileTools array contains all tools', () => {
-            expect(fileTools).toHaveLength(3);
+            expect(fileTools).toHaveLength(4);
             expect(fileTools).toContain(readFileTool);
             expect(fileTools).toContain(listDirTool);
             // megaWriterTool replaces writeFileTool for flexibility (Issue #6)
             expect(fileTools).toContain(megaWriterTool);
+            // editFileTool added for Issue #7
+            expect(fileTools).toContain(editFileTool);
+        });
+
+        test('editFileTool has correct structure', () => {
+            expect(editFileTool).toHaveProperty('type', 'function');
+            expect(editFileTool).toHaveProperty('name', 'edit_file');
+            expect(editFileTool).toHaveProperty('description');
+            expect(editFileTool.parameters.required).toContain('filepath');
+            expect(editFileTool.parameters.required).toContain('old_string');
+            expect(editFileTool.parameters.required).toContain('new_string');
+            expect(editFileTool.parameters.properties).toHaveProperty('replace_all');
         });
 
         test('megaWriterTool has correct structure with summary field', () => {
@@ -135,10 +151,10 @@ describe('Filetooling', () => {
             expect(progressCallbacks[1]).toEqual({ action: 'succeed', message: 'File written successfully' });
         });
 
-        test('handleReadFile reads existing file', async () => {
+        test('handleReadFile reads existing file with line numbers', async () => {
             const testFile = 'test.txt';
             const testContent = 'Hello, World!';
-            
+
             // Create test file first
             const filePath = path.join(tempDir, testFile);
             await fs.writeFile(filePath, testContent);
@@ -149,7 +165,9 @@ describe('Filetooling', () => {
 
             expect(result.ok).toBe(true);
             expect(result.path).toBe(testFile);
-            expect(result.preview).toBe(testContent);
+            // Content now includes line numbers (cat -n format)
+            expect(result.content).toBe('1| Hello, World!');
+            expect(result.totalLines).toBe(1);
             expect(result.truncated).toBe(false);
 
             // Verify progress callbacks
@@ -427,11 +445,261 @@ describe('Filetooling', () => {
 
         test('handleWriteFile respects size limits', async () => {
             const largeContent = 'x'.repeat(300 * 1024); // 300KB > 256KB limit
-            
+
             await expect(handleWriteFile({
                 filepath: 'large.txt',
                 content: largeContent
             }, mockProgressCallback)).rejects.toThrow('Content too large');
+        });
+    });
+
+    describe('Edit File Operations', () => {
+        test('handleEditFile performs exact string replacement', async () => {
+            const testFile = 'edit-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            await fs.writeFile(filePath, 'Hello World\nGoodbye World\n');
+
+            // Read first (required for staleness tracking)
+            await handleReadFile({ filepath: testFile });
+
+            const result = await handleEditFile({
+                filepath: testFile,
+                old_string: 'Hello World',
+                new_string: 'Hi World'
+            }, mockProgressCallback);
+
+            expect(result.ok).toBe(true);
+            expect(result.replacements).toBe(1);
+            expect(result.matchStrategy).toBe('exact');
+
+            const content = await fs.readFile(filePath, 'utf-8');
+            expect(content).toBe('Hi World\nGoodbye World\n');
+        });
+
+        test('handleEditFile requires read before edit', async () => {
+            const testFile = 'edit-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            await fs.writeFile(filePath, 'Hello World\n');
+
+            // Don't read first - should fail
+            await expect(handleEditFile({
+                filepath: testFile,
+                old_string: 'Hello',
+                new_string: 'Hi'
+            }, mockProgressCallback)).rejects.toThrow('File must be read before editing');
+        });
+
+        test('handleEditFile detects stale file', async () => {
+            const testFile = 'edit-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            await fs.writeFile(filePath, 'Original content\n');
+
+            // Read file
+            await handleReadFile({ filepath: testFile });
+
+            // Wait and externally modify
+            await new Promise(r => setTimeout(r, 10));
+            await fs.writeFile(filePath, 'Modified externally\n');
+
+            // Try to edit - should fail due to staleness
+            await expect(handleEditFile({
+                filepath: testFile,
+                old_string: 'Original',
+                new_string: 'New'
+            }, mockProgressCallback)).rejects.toThrow('has been modified since it was last read');
+        });
+
+        test('handleEditFile allows consecutive edits without re-read', async () => {
+            const testFile = 'edit-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            await fs.writeFile(filePath, 'aaa bbb ccc\n');
+
+            await handleReadFile({ filepath: testFile });
+
+            // First edit
+            const r1 = await handleEditFile({
+                filepath: testFile,
+                old_string: 'aaa',
+                new_string: 'xxx'
+            });
+            expect(r1.ok).toBe(true);
+
+            // Second edit without re-read (should work - tracking is updated after edit)
+            const r2 = await handleEditFile({
+                filepath: testFile,
+                old_string: 'bbb',
+                new_string: 'yyy'
+            });
+            expect(r2.ok).toBe(true);
+
+            const content = await fs.readFile(filePath, 'utf-8');
+            expect(content).toBe('xxx yyy ccc\n');
+        });
+
+        test('handleEditFile rejects multiple matches without replace_all', async () => {
+            const testFile = 'edit-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            await fs.writeFile(filePath, 'foo bar foo baz foo\n');
+
+            await handleReadFile({ filepath: testFile });
+
+            await expect(handleEditFile({
+                filepath: testFile,
+                old_string: 'foo',
+                new_string: 'qux'
+            })).rejects.toThrow('matches 3 locations');
+        });
+
+        test('handleEditFile replaces all with replace_all flag', async () => {
+            const testFile = 'edit-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            await fs.writeFile(filePath, 'foo bar foo baz foo\n');
+
+            await handleReadFile({ filepath: testFile });
+
+            const result = await handleEditFile({
+                filepath: testFile,
+                old_string: 'foo',
+                new_string: 'qux',
+                replace_all: true
+            });
+
+            expect(result.ok).toBe(true);
+            expect(result.replacements).toBe(3);
+
+            const content = await fs.readFile(filePath, 'utf-8');
+            expect(content).toBe('qux bar qux baz qux\n');
+        });
+    });
+
+    describe('Fuzzy Matching', () => {
+        test('line-trimmed matching handles whitespace differences', async () => {
+            const testFile = 'fuzzy-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            // File has extra whitespace
+            await fs.writeFile(filePath, '    function greet() {   \n        console.log("hi");   \n    }  \n');
+
+            await handleReadFile({ filepath: testFile });
+
+            // Search without whitespace
+            const result = await handleEditFile({
+                filepath: testFile,
+                old_string: 'function greet() {\nconsole.log("hi");\n}',
+                new_string: 'function greet() {\n    console.log("hello");\n}'
+            });
+
+            expect(result.ok).toBe(true);
+            expect(result.matchStrategy).toBe('line-trimmed');
+        });
+
+        test('indentation-flexible matching handles indent differences', async () => {
+            const testFile = 'fuzzy-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            // File has 8-space indent
+            await fs.writeFile(filePath, '        const x = 1;\n        const y = 2;\n');
+
+            await handleReadFile({ filepath: testFile });
+
+            // Search with no indent
+            const result = await handleEditFile({
+                filepath: testFile,
+                old_string: 'const x = 1;\nconst y = 2;',
+                new_string: 'const a = 1;\nconst b = 2;'
+            });
+
+            expect(result.ok).toBe(true);
+            // Either line-trimmed or indentation-flexible will match
+            expect(['line-trimmed', 'indentation-flexible']).toContain(result.matchStrategy);
+        });
+
+        test('whitespace-normalized matching handles collapsed whitespace', async () => {
+            const testFile = 'fuzzy-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            // File has extra internal whitespace
+            await fs.writeFile(filePath, 'if (x    ==    y) {\n    doSomething();\n}\n');
+
+            await handleReadFile({ filepath: testFile });
+
+            // Search with normalized whitespace
+            const result = await handleEditFile({
+                filepath: testFile,
+                old_string: 'if (x == y) { doSomething(); }',
+                new_string: 'if (x === y) {\n    doSomething();\n}'
+            });
+
+            expect(result.ok).toBe(true);
+            expect(result.matchStrategy).toBe('whitespace-normalized');
+        });
+    });
+
+    describe('Read File Line-Based Operations', () => {
+        test('handleReadFile supports offset and limit', async () => {
+            const testFile = 'multiline.txt';
+            const filePath = path.join(tempDir, testFile);
+            await fs.writeFile(filePath, 'line1\nline2\nline3\nline4\nline5\n');
+
+            // Read lines 2-3 (offset 1, limit 2)
+            const result = await handleReadFile({
+                filepath: testFile,
+                offset: 1,
+                limit: 2
+            });
+
+            expect(result.ok).toBe(true);
+            expect(result.startLine).toBe(2);
+            expect(result.endLine).toBe(3);
+            expect(result.content).toContain('line2');
+            expect(result.content).toContain('line3');
+            expect(result.content).not.toContain('line1');
+            expect(result.content).not.toContain('line4');
+        });
+
+        test('handleReadFile provides pagination hint for large files', async () => {
+            const testFile = 'large.txt';
+            const filePath = path.join(tempDir, testFile);
+            const lines = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join('\n');
+            await fs.writeFile(filePath, lines);
+
+            const result = await handleReadFile({
+                filepath: testFile,
+                limit: 10
+            });
+
+            expect(result.truncated).toBe(true);
+            expect(result.hint).toContain('offset=10');
+        });
+
+        test('handleReadFile truncates long lines', async () => {
+            const testFile = 'longline.txt';
+            const filePath = path.join(tempDir, testFile);
+            const longLine = 'x'.repeat(3000); // Longer than MAX_LINE_LENGTH (2000)
+            await fs.writeFile(filePath, longLine);
+
+            const result = await handleReadFile({ filepath: testFile });
+
+            expect(result.ok).toBe(true);
+            expect(result.content).toContain('...');
+            expect(result.content.length).toBeLessThan(3000);
+        });
+    });
+
+    describe('executeFileTool with edit_file', () => {
+        test('executeFileTool dispatches to edit_file handler', async () => {
+            const testFile = 'dispatch-test.txt';
+            const filePath = path.join(tempDir, testFile);
+            await fs.writeFile(filePath, 'original content\n');
+
+            // Read first
+            await executeFileTool('read_file', { filepath: testFile });
+
+            const result = await executeFileTool('edit_file', {
+                filepath: testFile,
+                old_string: 'original',
+                new_string: 'modified'
+            }, mockProgressCallback);
+
+            expect(result.ok).toBe(true);
+            expect(result.replacements).toBe(1);
         });
     });
 });

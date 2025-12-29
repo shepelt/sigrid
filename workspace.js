@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import * as tar from 'tar';
 import { SigridBuilder } from './builder.js';
 import { createSnapshot } from './snapshot.js';
-import { getStaticContextPrompt, getStaticContextWithMegawriterPrompt } from './prompts.js';
+import { getStaticContextPrompt, getStaticContextWithMegawriterPrompt, getStaticContextWithFileToolsPrompt, getStaticContextWithEditToolPrompt } from './prompts.js';
 import { executeStatic } from './llm-static.js';
 
 /**
@@ -185,6 +185,8 @@ export class Workspace {
      * @param {boolean} options.stream - Enable streaming (static mode only, not compatible with tools)
      * @param {Function} options.streamCallback - Stream callback (static mode only): (chunk: string) => void
      * @param {boolean} options.enableMegawriter - Enable write_multiple_files tool in static mode for batch file writing
+     * @param {boolean} options.enableFileTools - Enable file tools (read_file, list_dir, write_file, edit_file) for targeted edits
+     * @param {boolean} options.enableWriteFileTool - Alias for enableFileTools (deprecated)
      * @param {Array} options.tools - Custom tool definitions
      * @param {Object|string} options.tool_choice - Tool choice: "auto", "none", "required", or {type: "auto"} (Claude format)
      * @param {Function} options.toolExecutor - Custom tool executor function (toolName, args) => Promise<result>
@@ -226,13 +228,16 @@ export class Workspace {
     async _executeStatic(prompt, options) {
         const progressCallback = options.progressCallback;
 
-        // Track files written via megawriter tool execution
-        const megawriterFilesWritten = [];
-        const wrappedProgressCallback = options.enableMegawriter && progressCallback
+        // Track files written via tool execution (megawriter or file tools)
+        const toolFilesWritten = [];
+        const useFileTools = options.enableFileTools || options.enableWriteFileTool;
+        const shouldTrackFiles = (options.enableMegawriter || useFileTools) && progressCallback;
+
+        const wrappedProgressCallback = shouldTrackFiles
             ? (event, data) => {
-                // Track FILE_STREAMING_END events to capture files written by megawriter
+                // Track FILE_STREAMING_END events to capture files written by tools
                 if (event === ProgressEvents.FILE_STREAMING_END && data?.path) {
-                    megawriterFilesWritten.push({
+                    toolFilesWritten.push({
                         path: data.path,
                         size: data.fullContent?.length || 0
                     });
@@ -248,7 +253,13 @@ export class Workspace {
         // For multi-turn conversations, always regenerate snapshot to include files from previous turns
         const isMultiTurn = !!options.conversationID;
 
-        if (isMultiTurn) {
+        if (useFileTools) {
+            // File tools mode: provide minimal context (file list only)
+            // LLM will use read_file to access file contents on demand
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATING);
+            snapshot = await this._getFileListSnapshot();
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATED);
+        } else if (isMultiTurn) {
             // Always generate fresh snapshot for continuation turns
             // This ensures the LLM sees files written in previous turns
             if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATING);
@@ -290,8 +301,15 @@ export class Workspace {
 
         // Smart prompt selection based on tool usage
         let systemPrompt;
+        const useEditTool = options.enableEditTool;
 
-        if (options.enableMegawriter) {
+        if (useEditTool) {
+            // Hybrid mode: snapshot context + edit_file only (best of both worlds)
+            systemPrompt = getStaticContextWithEditToolPrompt();
+        } else if (useFileTools) {
+            // File tools mode: read_file, edit_file, write_file
+            systemPrompt = getStaticContextWithFileToolsPrompt();
+        } else if (options.enableMegawriter) {
             // Megawriter mode: Batch file writing in single turn
             systemPrompt = getStaticContextWithMegawriterPrompt();
         } else {
@@ -301,14 +319,18 @@ export class Workspace {
 
         // Construct final options (merge user options with static mode requirements)
         // Note: builder.execute will handle tool merging based on enableMegawriter flag
+        const snapshotPrompt = useFileTools
+            ? ['Here are the files in the workspace. Use read_file to view contents:', snapshot]
+            : ['Here is the full codebase for context:', snapshot];
+
         const finalOptions = {
             ...options,  // Keep all user options including enableMegawriter, tools, tool_choice
             workspace: this.path,
             instructions: [...(options.instructions || []), systemPrompt],
-            prompts: ['Here is the full codebase for context:', snapshot],
+            prompts: snapshotPrompt,
             saveAssistantMessage: false,  // We'll save compact version ourselves
             streamCallback,  // Use wrapped callback if streaming
-            progressCallback: wrappedProgressCallback,  // Use wrapped callback to track megawriter files
+            progressCallback: wrappedProgressCallback,  // Use wrapped callback to track tool files
             // Note: conversationPersistence is optional
             // - If provided: uses internal tracking (efficient, fresh snapshots)
             // - If not provided: not supported in static mode (no server-side conversations)
@@ -341,11 +363,11 @@ export class Workspace {
         const fullContent = options.stream ? accumulatedContent : result.content;
 
         // Populate filesWritten based on mode:
-        // - If megawriter was used, files are already written via tool execution - use tracked files
+        // - If tools were used (megawriter or file tools), files are already written via tool execution
         // - Otherwise, deserialize XML output to filesystem
-        if (options.enableMegawriter && megawriterFilesWritten.length > 0) {
-            // Files already written by megawriter tool - use tracked list
-            result.filesWritten = megawriterFilesWritten;
+        if ((options.enableMegawriter || useFileTools) && toolFilesWritten.length > 0) {
+            // Files already written by tools - use tracked list
+            result.filesWritten = toolFilesWritten;
             if (progressCallback) {
                 progressCallback(ProgressEvents.FILES_WRITTEN, { count: result.filesWritten.length });
             }
@@ -497,6 +519,38 @@ export class Workspace {
      */
     async snapshot(options = {}) {
         return createSnapshot(this.path, options);
+    }
+
+    /**
+     * Get a minimal snapshot with file list only (no contents)
+     * Used for file tools mode where LLM reads files on demand
+     * @returns {Promise<string>} File list formatted as XML
+     * @private
+     */
+    async _getFileListSnapshot() {
+        const files = [];
+
+        async function walkDir(dir, basePath = '') {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
+                if (entry.isDirectory()) {
+                    // Skip common non-essential directories
+                    if (!['node_modules', '.git', 'dist', 'build', '.next'].includes(entry.name)) {
+                        await walkDir(path.join(dir, entry.name), relativePath);
+                    }
+                } else {
+                    const stat = await fs.stat(path.join(dir, entry.name));
+                    files.push({ path: relativePath, size: stat.size });
+                }
+            }
+        }
+
+        await walkDir(this.path);
+
+        // Format as simple file list
+        const fileList = files.map(f => `  ${f.path} (${f.size} bytes)`).join('\n');
+        return `<workspace-files>\n${fileList}\n</workspace-files>\n\nUse read_file to view file contents. Use edit_file for targeted edits or write_file/write_multiple_files for new files.`;
     }
 
     /**

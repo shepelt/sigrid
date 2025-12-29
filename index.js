@@ -15,9 +15,17 @@ import {
 
 import {
     fileTools,
+    readFileTool,
+    listDirTool,
+    writeFileTool,
+    megaWriterTool,
+    editFileTool,
     setSandboxRoot,
     getSandboxRoot,
-    executeFileTool
+    executeFileTool,
+    handleReadFile,
+    handleEditFile,
+    clearFileReadTracking
 } from './filetooling.js';
 
 import {
@@ -84,6 +92,14 @@ sigrid.setSandboxRoot = setSandboxRoot;
 sigrid.getSandboxRoot = getSandboxRoot;
 sigrid.executeFileTool = executeFileTool;
 sigrid.fileTools = fileTools;
+sigrid.readFileTool = readFileTool;
+sigrid.listDirTool = listDirTool;
+sigrid.writeFileTool = writeFileTool;
+sigrid.megaWriterTool = megaWriterTool;
+sigrid.editFileTool = editFileTool;
+sigrid.handleReadFile = handleReadFile;
+sigrid.handleEditFile = handleEditFile;
+sigrid.clearFileReadTracking = clearFileReadTracking;
 sigrid.createWorkspace = createWorkspace;
 sigrid.openWorkspace = openWorkspace;
 sigrid.Workspace = Workspace;
@@ -126,9 +142,17 @@ export {
     extractToolCalls,
     extractText,
     fileTools,
+    readFileTool,
+    listDirTool,
+    writeFileTool,
+    megaWriterTool,
+    editFileTool,
     setSandboxRoot,
     getSandboxRoot,
     executeFileTool,
+    handleReadFile,
+    handleEditFile,
+    clearFileReadTracking,
     createWorkspace,
     openWorkspace,
     Workspace,
