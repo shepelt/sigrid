@@ -265,6 +265,33 @@ describe('Snapshot Tests', () => {
             expect(DEFAULT_EXTENSIONS).toContain('.ts');
         });
 
+        test('should respect placeholderPatterns option', async () => {
+            // Create a public folder with files
+            await fs.mkdir(path.join(workspace.path, 'public'), { recursive: true });
+            await fs.writeFile(
+                path.join(workspace.path, 'public', 'logo.svg'),
+                '<svg></svg>'
+            );
+            await fs.writeFile(
+                path.join(workspace.path, 'public', 'data.json'),
+                '{"key": "value"}'
+            );
+
+            const { files, omitted } = await collectFiles(workspace.path, {
+                placeholderPatterns: ['public/**']
+            });
+
+            // public/ files should be in omitted with reason 'placeholder'
+            expect(omitted.some(f => f.path === 'public/logo.svg' && f.reason === 'placeholder')).toBe(true);
+            expect(omitted.some(f => f.path === 'public/data.json' && f.reason === 'placeholder')).toBe(true);
+
+            // public/ files should NOT be in files array
+            expect(files.some(f => f.path.startsWith('public/'))).toBe(false);
+
+            // Other files should still be in files array
+            expect(files.some(f => f.path.includes('src/index.ts'))).toBe(true);
+        });
+
         test('should allow extending DEFAULT_EXCLUDES in applications', async () => {
             // Simulate application extending defaults
             const customExcludes = [

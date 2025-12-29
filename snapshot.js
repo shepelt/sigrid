@@ -15,7 +15,9 @@ export const DEFAULT_EXTENSIONS = [
     '.md', '.mdx',
     '.json', '.yaml', '.yml',
     '.xml',
-    '.txt'
+    '.txt',
+    // Images (shown as placeholders in file structure)
+    '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.ico'
 ];
 
 /**
@@ -80,11 +82,30 @@ export async function collectFiles(workspaceDir, options = {}) {
         maxFileSize = DEFAULT_MAX_FILE_SIZE,
         exclude = DEFAULT_EXCLUDES,
         include = ['**/*'],
-        respectGitignore = true
+        respectGitignore = true,
+        placeholderPatterns = []  // Patterns for files to include as placeholders only (no content)
     } = options;
 
     const files = [];
     const omitted = [];
+
+    // Build placeholder matchers using minimatch
+    const placeholderMatchers = placeholderPatterns.map(pattern => {
+        return (filePath) => {
+            // Simple glob matching: support ** and *
+            const regex = new RegExp(
+                '^' + pattern
+                    .replace(/\*\*/g, '.*')
+                    .replace(/\*/g, '[^/]*')
+                    .replace(/\//g, '\\/') + '$'
+            );
+            return regex.test(filePath);
+        };
+    });
+
+    const isPlaceholderPath = (filePath) => {
+        return placeholderMatchers.some(matcher => matcher(filePath));
+    };
 
     // Load .gitignore
     const ig = respectGitignore ? await loadGitignore(workspaceDir) : ignore();
@@ -130,6 +151,24 @@ export async function collectFiles(workspaceDir, options = {}) {
             // Check extension
             const ext = path.extname(relativePath);
             if (extensions.length > 0 && !extensions.includes(ext)) {
+                continue;
+            }
+
+            // Check if file should be placeholder only (no content)
+            if (isPlaceholderPath(relativePath)) {
+                try {
+                    const stat = await fs.stat(absolutePath);
+                    omitted.push({
+                        path: relativePath,
+                        reason: 'placeholder',
+                        size: stat.size
+                    });
+                } catch {
+                    omitted.push({
+                        path: relativePath,
+                        reason: 'placeholder'
+                    });
+                }
                 continue;
             }
 
