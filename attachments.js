@@ -54,24 +54,37 @@ function decodeBase64Text(base64Data) {
 /**
  * Format attachment as content block for OpenAI-compatible API
  *
- * @param {Object} attachment - Validated attachment
+ * @param {Object} attachment - Validated attachment (may include localPath if saved to workspace)
  * @returns {Object} Formatted content block
  */
 function formatAttachmentBlock(attachment) {
     const info = getAttachmentInfo(attachment.mimeType);
     const category = info?.category || 'unknown';
+    const localPathNote = attachment.localPath ? ` (saved to ${attachment.localPath})` : '';
 
     switch (category) {
         case 'image':
         case 'svg':
             // Image content block (OpenAI format)
-            return {
-                type: 'image_url',
-                image_url: {
-                    url: `data:${attachment.mimeType};base64,${attachment.data}`,
-                    detail: 'auto'
-                }
-            };
+            // Add text block before image to note the local path
+            return attachment.localPath
+                ? [
+                    { type: 'text', text: `[Image: ${attachment.filename} saved to ${attachment.localPath}]` },
+                    {
+                        type: 'image_url',
+                        image_url: {
+                            url: `data:${attachment.mimeType};base64,${attachment.data}`,
+                            detail: 'auto'
+                        }
+                    }
+                ]
+                : {
+                    type: 'image_url',
+                    image_url: {
+                        url: `data:${attachment.mimeType};base64,${attachment.data}`,
+                        detail: 'auto'
+                    }
+                };
 
         case 'text':
             // Inline text content
@@ -80,12 +93,12 @@ function formatAttachmentBlock(attachment) {
                 const ext = attachment.filename.split('.').pop() || 'txt';
                 return {
                     type: 'text',
-                    text: `File: ${attachment.filename}\n\`\`\`${ext}\n${textContent}\n\`\`\``
+                    text: `File: ${attachment.filename}${localPathNote}\n\`\`\`${ext}\n${textContent}\n\`\`\``
                 };
             } catch (e) {
                 return {
                     type: 'text',
-                    text: `[File: ${attachment.filename} - could not decode]`
+                    text: `[File: ${attachment.filename}${localPathNote} - could not decode]`
                 };
             }
 
@@ -93,13 +106,13 @@ function formatAttachmentBlock(attachment) {
             // PDF - note as unprocessed for now
             return {
                 type: 'text',
-                text: `[Document: ${attachment.filename} - PDF text extraction not yet implemented]`
+                text: `[Document: ${attachment.filename}${localPathNote} - PDF text extraction not yet implemented]`
             };
 
         default:
             return {
                 type: 'text',
-                text: `[Attachment: ${attachment.filename} - unsupported type: ${attachment.mimeType}]`
+                text: `[Attachment: ${attachment.filename}${localPathNote} - unsupported type: ${attachment.mimeType}]`
             };
     }
 }
@@ -130,8 +143,17 @@ export function formatMessageWithAttachments(message, model) {
     // Process attachments
     for (const attachment of attachments) {
         const validated = validateAttachment(attachment);
+        // Preserve localPath if present
+        if (attachment.localPath) {
+            validated.localPath = attachment.localPath;
+        }
         const block = formatAttachmentBlock(validated);
-        contentParts.push(block);
+        // Handle arrays (e.g., image with text label)
+        if (Array.isArray(block)) {
+            contentParts.push(...block);
+        } else {
+            contentParts.push(block);
+        }
     }
 
     // Merge consecutive text blocks
