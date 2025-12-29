@@ -925,7 +925,7 @@ export async function handleEditMultipleFiles(args = {}, progressCallback = null
                         new_string: edit.new_string,
                         replace_all: edit.replace_all || false
                     },
-                    null, // No individual progress callbacks
+                    progressCallback, // Pass callback for FILE_STREAMING_END tracking
                     workspacePath
                 );
 
