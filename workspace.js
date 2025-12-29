@@ -228,13 +228,16 @@ export class Workspace {
     async _executeStatic(prompt, options) {
         const progressCallback = options.progressCallback;
 
-        // Track files written via megawriter tool execution
-        const megawriterFilesWritten = [];
-        const wrappedProgressCallback = options.enableMegawriter && progressCallback
+        // Track files written via tool execution (megawriter or file tools)
+        const toolFilesWritten = [];
+        const useFileTools = options.enableFileTools || options.enableWriteFileTool;
+        const shouldTrackFiles = (options.enableMegawriter || useFileTools) && progressCallback;
+
+        const wrappedProgressCallback = shouldTrackFiles
             ? (event, data) => {
-                // Track FILE_STREAMING_END events to capture files written by megawriter
+                // Track FILE_STREAMING_END events to capture files written by tools
                 if (event === ProgressEvents.FILE_STREAMING_END && data?.path) {
-                    megawriterFilesWritten.push({
+                    toolFilesWritten.push({
                         path: data.path,
                         size: data.fullContent?.length || 0
                     });
@@ -249,9 +252,6 @@ export class Workspace {
 
         // For multi-turn conversations, always regenerate snapshot to include files from previous turns
         const isMultiTurn = !!options.conversationID;
-
-        // When file tools are enabled, skip full snapshot - LLM reads files on demand
-        const useFileTools = options.enableFileTools || options.enableWriteFileTool;
 
         if (useFileTools) {
             // File tools mode: provide minimal context (file list only)
@@ -352,11 +352,11 @@ export class Workspace {
         const fullContent = options.stream ? accumulatedContent : result.content;
 
         // Populate filesWritten based on mode:
-        // - If megawriter was used, files are already written via tool execution - use tracked files
+        // - If tools were used (megawriter or file tools), files are already written via tool execution
         // - Otherwise, deserialize XML output to filesystem
-        if (options.enableMegawriter && megawriterFilesWritten.length > 0) {
-            // Files already written by megawriter tool - use tracked list
-            result.filesWritten = megawriterFilesWritten;
+        if ((options.enableMegawriter || useFileTools) && toolFilesWritten.length > 0) {
+            // Files already written by tools - use tracked list
+            result.filesWritten = toolFilesWritten;
             if (progressCallback) {
                 progressCallback(ProgressEvents.FILES_WRITTEN, { count: result.filesWritten.length });
             }
