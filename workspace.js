@@ -250,7 +250,16 @@ export class Workspace {
         // For multi-turn conversations, always regenerate snapshot to include files from previous turns
         const isMultiTurn = !!options.conversationID;
 
-        if (isMultiTurn) {
+        // When file tools are enabled, skip full snapshot - LLM reads files on demand
+        const useFileTools = options.enableFileTools || options.enableWriteFileTool;
+
+        if (useFileTools) {
+            // File tools mode: provide minimal context (file list only)
+            // LLM will use read_file to access file contents on demand
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATING);
+            snapshot = await this._getFileListSnapshot();
+            if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATED);
+        } else if (isMultiTurn) {
             // Always generate fresh snapshot for continuation turns
             // This ensures the LLM sees files written in previous turns
             if (progressCallback) progressCallback(ProgressEvents.SNAPSHOT_GENERATING);
@@ -499,6 +508,38 @@ export class Workspace {
      */
     async snapshot(options = {}) {
         return createSnapshot(this.path, options);
+    }
+
+    /**
+     * Get a minimal snapshot with file list only (no contents)
+     * Used for file tools mode where LLM reads files on demand
+     * @returns {Promise<string>} File list formatted as XML
+     * @private
+     */
+    async _getFileListSnapshot() {
+        const files = [];
+
+        async function walkDir(dir, basePath = '') {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
+                if (entry.isDirectory()) {
+                    // Skip common non-essential directories
+                    if (!['node_modules', '.git', 'dist', 'build', '.next'].includes(entry.name)) {
+                        await walkDir(path.join(dir, entry.name), relativePath);
+                    }
+                } else {
+                    const stat = await fs.stat(path.join(dir, entry.name));
+                    files.push({ path: relativePath, size: stat.size });
+                }
+            }
+        }
+
+        await walkDir(this.path);
+
+        // Format as simple file list
+        const fileList = files.map(f => `  ${f.path} (${f.size} bytes)`).join('\n');
+        return `<workspace-files>\n${fileList}\n</workspace-files>\n\nUse read_file to view file contents. Use edit_file for targeted edits or write_file/write_multiple_files for new files.`;
     }
 
     /**

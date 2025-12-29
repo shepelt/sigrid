@@ -224,11 +224,15 @@ export async function executeStatic(prompt, opts = {}) {
 
             toolIterations++;
 
-            // Emit tool call start event
+            // Emit tool call start event with tool names for debugging
             if (opts.progressCallback) {
                 opts.progressCallback('TOOL_CALL_START', {
                     iteration: toolIterations,
-                    toolCount: toolCalls.length
+                    toolCount: toolCalls.length,
+                    tools: toolCalls.map(tc => ({
+                        name: tc.function.name,
+                        id: tc.id
+                    }))
                 });
             }
 
