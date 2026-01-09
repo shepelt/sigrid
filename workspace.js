@@ -751,6 +751,8 @@ export class Workspace {
      * @param {boolean} options.includeWorkspace.fileStructure - Include file paths only (default: true)
      * @param {boolean} options.includeWorkspace.files - Include full file contents (default: false)
      * @param {Function} options.progressCallback - Progress callback
+     * @param {boolean} options.stream - Enable streaming response
+     * @param {Function} options.streamCallback - Stream callback: (chunk: string) => void
      * @returns {Promise<{content: string, conversationID: string}>}
      *
      * @example
@@ -773,6 +775,13 @@ export class Workspace {
      *   instructions: [dbDocs],
      *   includeWorkspace: { aiRules: true, fileStructure: true, files: false }
      * });
+     *
+     * // Chat with streaming for real-time output
+     * await workspace.chat('Explain the codebase', {
+     *   stream: true,
+     *   streamCallback: (chunk) => process.stdout.write(chunk),
+     *   includeWorkspace: { aiRules: true, fileStructure: true }
+     * });
      */
     async chat(message, options = {}) {
         const {
@@ -784,7 +793,9 @@ export class Workspace {
             includeWorkspace = {},
             instructions = [],
             instruction,
-            progressCallback
+            progressCallback,
+            stream,
+            streamCallback
         } = options;
 
         // Enable conversation mode only if persistence is provided
@@ -841,7 +852,7 @@ export class Workspace {
 
         // Use llm-static for chat mode (no file tools, just conversation)
         if (progressCallback) {
-            progressCallback(ProgressEvents.RESPONSE_WAITING);
+            progressCallback(stream ? ProgressEvents.RESPONSE_STREAMING : ProgressEvents.RESPONSE_WAITING);
         }
 
         const result = await executeStatic(message, {
@@ -852,11 +863,13 @@ export class Workspace {
             attachments,
             prompts: contextPrompts,
             progressCallback,
+            stream,
+            streamCallback,
             max_tokens: options.max_tokens || 16000  // Default max tokens for chat
         });
 
         if (progressCallback) {
-            progressCallback(ProgressEvents.RESPONSE_RECEIVED);
+            progressCallback(stream ? ProgressEvents.RESPONSE_STREAMED : ProgressEvents.RESPONSE_RECEIVED);
         }
 
         return result;

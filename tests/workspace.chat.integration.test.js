@@ -327,4 +327,115 @@ const results = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
             content.includes('select')
         ).toBe(true);
     });
+
+    describe('Streaming Mode', () => {
+        test('basic streaming chat', async () => {
+            const chunks = [];
+
+            const result = await workspace.chat('What is 2 + 2? Reply in one word.', {
+                model,
+                stream: true,
+                streamCallback: (chunk) => {
+                    chunks.push(chunk);
+                },
+                includeWorkspace: {
+                    aiRules: false,
+                    fileStructure: false,
+                    files: false
+                }
+            });
+
+            // Verify streaming happened
+            expect(chunks.length).toBeGreaterThan(0);
+            console.log(`✓ Received ${chunks.length} chunks during streaming`);
+
+            // In streaming mode, content may be empty (chunks contain the response)
+            const fullResponse = chunks.join('');
+            expect(fullResponse.length).toBeGreaterThan(0);
+            expect(fullResponse).toMatch(/4|four/i);
+        });
+
+        test('streaming with conversation persistence', async () => {
+            const persistence = new InMemoryPersistence();
+            const conversationID = 'test-streaming-chat';
+            const chunks1 = [];
+            const chunks2 = [];
+
+            // First message with streaming
+            const r1 = await workspace.chat('My favorite number is 42.', {
+                model,
+                conversation: true,
+                conversationPersistence: persistence,
+                conversationID,
+                stream: true,
+                streamCallback: (chunk) => {
+                    chunks1.push(chunk);
+                },
+                includeWorkspace: {
+                    aiRules: false,
+                    fileStructure: false,
+                    files: false
+                }
+            });
+
+            expect(chunks1.length).toBeGreaterThan(0);
+            expect(r1.conversationID).toBe(conversationID);
+            console.log(`✓ First turn: ${chunks1.length} chunks`);
+
+            // Verify conversation was persisted
+            const history = await persistence.get(conversationID);
+            expect(history).toBeTruthy();
+            expect(history.length).toBeGreaterThan(0);
+
+            // Second message - should remember context
+            const r2 = await workspace.chat('What is my favorite number?', {
+                model,
+                conversationID,
+                conversationPersistence: persistence,
+                stream: true,
+                streamCallback: (chunk) => {
+                    chunks2.push(chunk);
+                },
+                includeWorkspace: {
+                    aiRules: false,
+                    fileStructure: false,
+                    files: false
+                }
+            });
+
+            expect(chunks2.length).toBeGreaterThan(0);
+            const response = chunks2.join('');
+            expect(response).toMatch(/42/);
+            console.log(`✓ Second turn: ${chunks2.length} chunks, remembered context`);
+        });
+
+        test('streaming progress events', async () => {
+            const events = [];
+            const chunks = [];
+
+            await workspace.chat('Hello', {
+                model,
+                stream: true,
+                streamCallback: (chunk) => {
+                    chunks.push(chunk);
+                },
+                progressCallback: (event, data) => {
+                    events.push({ event, data });
+                },
+                includeWorkspace: {
+                    aiRules: false,
+                    fileStructure: false,
+                    files: false
+                }
+            });
+
+            // Check that we got the expected streaming events
+            const eventNames = events.map(e => e.event);
+            expect(eventNames).toContain('RESPONSE_STREAMING');
+            expect(eventNames).toContain('RESPONSE_STREAMED');
+            // Should NOT have non-streaming events
+            expect(eventNames).not.toContain('RESPONSE_WAITING');
+            expect(eventNames).not.toContain('RESPONSE_RECEIVED');
+        });
+    });
 });
