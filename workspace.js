@@ -190,7 +190,8 @@ export class Workspace {
      * @param {Array} options.tools - Custom tool definitions
      * @param {Object|string} options.tool_choice - Tool choice: "auto", "none", "required", or {type: "auto"} (Claude format)
      * @param {Function} options.toolExecutor - Custom tool executor function (toolName, args) => Promise<result>
-     * @returns {Promise<{content: string, conversationID: string, filesWritten?: Array}>}
+     * @param {boolean} options.enablePromptCaching - Enable prompt caching for Anthropic/OpenAI (reduces costs on repeated system prompts)
+     * @returns {Promise<{content: string, conversationID: string, filesWritten?: Array, tokenCount?: Object}>}
      */
     async execute(prompt, options = {}) {
         // Handle static mode
@@ -753,7 +754,8 @@ export class Workspace {
      * @param {Function} options.progressCallback - Progress callback
      * @param {boolean} options.stream - Enable streaming response
      * @param {Function} options.streamCallback - Stream callback: (chunk: string) => void
-     * @returns {Promise<{content: string, conversationID: string}>}
+     * @param {boolean} options.enablePromptCaching - Enable prompt caching for Anthropic/OpenAI (reduces costs on repeated prompts)
+     * @returns {Promise<{content: string, conversationID: string, tokenCount?: Object}>}
      *
      * @example
      * // Start a chat conversation
@@ -795,7 +797,8 @@ export class Workspace {
             instruction,
             progressCallback,
             stream,
-            streamCallback
+            streamCallback,
+            enablePromptCaching
         } = options;
 
         // Enable conversation mode only if persistence is provided
@@ -865,6 +868,7 @@ export class Workspace {
             progressCallback,
             stream,
             streamCallback,
+            enablePromptCaching,
             max_tokens: options.max_tokens || 16000  // Default max tokens for chat
         });
 

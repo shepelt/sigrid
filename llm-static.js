@@ -73,7 +73,8 @@ function generateConversationID() {
  * @param {number} opts.retryBaseDelay - Base delay in seconds for exponential backoff (default: 5)
  * @param {number} opts.retryMaxDelay - Maximum delay in seconds (default: 60)
  * @param {Function} opts.onRetry - Callback for retry attempts: (info: {attempt, delay, error, remainingTokens, resetTime}) => void
- * @returns {Promise<{content: string, conversationID: string, tokenCount?: Object}>} - content is empty string if streaming enabled, tokenCount contains usage stats if available
+ * @param {boolean} opts.enablePromptCaching - Enable prompt caching for supported providers (Anthropic, OpenAI). Adds cache_control markers to system messages. (default: false)
+ * @returns {Promise<{content: string, conversationID: string, tokenCount?: Object}>} - content is empty string if streaming enabled, tokenCount contains usage stats and cache metrics if available
  */
 export async function executeStatic(prompt, opts = {}) {
     const apiClient = opts.client || getClient();
@@ -129,17 +130,32 @@ export async function executeStatic(prompt, opts = {}) {
         // Accepts: true (default separator), false (no consolidation - default), or string (custom separator)
         const consolidate = opts.consolidateSystemMessages ?? false;
 
+        // Cache control for prompt caching (Anthropic/OpenAI)
+        const cacheControl = opts.enablePromptCaching
+            ? { cache_control: { type: "ephemeral" } }
+            : {};
+
         if (consolidate === false) {
             // Legacy behavior: separate system message for each instruction
-            for (const inst of instructions) {
-                messages.push({ role: "system", content: inst });
+            // Only add cache_control to the last system message (where cache breakpoint should be)
+            for (let i = 0; i < instructions.length; i++) {
+                const isLast = i === instructions.length - 1;
+                messages.push({
+                    role: "system",
+                    content: instructions[i],
+                    ...(isLast ? cacheControl : {})
+                });
             }
         } else {
             // Consolidate into single system message
             // Multiple system messages cause Claude to ignore earlier instructions
             const separator = typeof consolidate === 'string' ? consolidate : '\n\n---\n\n';
             const combinedInstructions = instructions.join(separator);
-            messages.push({ role: "system", content: combinedInstructions });
+            messages.push({
+                role: "system",
+                content: combinedInstructions,
+                ...cacheControl
+            });
         }
     }
 
@@ -338,12 +354,23 @@ export async function executeStatic(prompt, opts = {}) {
 
             response = await callWithRetry(apiClient, followupParams, retryConfig);
 
-            // Accumulate token usage
+            // Accumulate token usage (including cache metrics)
             const followupTokens = extractTokenUsage(response);
             if (totalTokenCount && followupTokens) {
                 totalTokenCount.promptTokens += followupTokens.promptTokens;
                 totalTokenCount.completionTokens += followupTokens.completionTokens;
                 totalTokenCount.totalTokens += followupTokens.totalTokens;
+
+                // Accumulate cache metrics
+                if (followupTokens.cacheCreationInputTokens !== undefined) {
+                    totalTokenCount.cacheCreationInputTokens = (totalTokenCount.cacheCreationInputTokens || 0) + followupTokens.cacheCreationInputTokens;
+                }
+                if (followupTokens.cacheReadInputTokens !== undefined) {
+                    totalTokenCount.cacheReadInputTokens = (totalTokenCount.cacheReadInputTokens || 0) + followupTokens.cacheReadInputTokens;
+                }
+                if (followupTokens.cachedTokens !== undefined) {
+                    totalTokenCount.cachedTokens = (totalTokenCount.cachedTokens || 0) + followupTokens.cachedTokens;
+                }
             }
         }
 

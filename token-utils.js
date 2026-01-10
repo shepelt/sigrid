@@ -20,9 +20,10 @@ export function estimateTokens(text) {
 /**
  * Extract token usage from LLM API response
  * Supports both OpenAI format (prompt_tokens) and Claude format (input_tokens)
+ * Also extracts cache metrics when available
  *
  * @param {Object} response - API response object
- * @returns {Object|null} Token usage object with promptTokens, completionTokens, totalTokens
+ * @returns {Object|null} Token usage object with promptTokens, completionTokens, totalTokens, and optional cache metrics
  */
 export function extractTokenUsage(response) {
     if (!response?.usage) {
@@ -38,28 +39,57 @@ export function extractTokenUsage(response) {
     const completionTokens = usage.completion_tokens || usage.output_tokens || 0;
     const totalTokens = usage.total_tokens || (promptTokens + completionTokens);
 
-    return {
+    const result = {
         promptTokens,
         completionTokens,
         totalTokens
     };
+
+    // Extract cache metrics if available
+    // Anthropic format: cache_creation_input_tokens, cache_read_input_tokens
+    if (usage.cache_creation_input_tokens !== undefined) {
+        result.cacheCreationInputTokens = usage.cache_creation_input_tokens;
+    }
+    if (usage.cache_read_input_tokens !== undefined) {
+        result.cacheReadInputTokens = usage.cache_read_input_tokens;
+    }
+
+    // OpenAI format: prompt_tokens_details.cached_tokens
+    if (usage.prompt_tokens_details?.cached_tokens !== undefined) {
+        result.cachedTokens = usage.prompt_tokens_details.cached_tokens;
+    }
+
+    return result;
 }
 
 /**
  * Accumulate token counts from multiple responses
  *
  * @param {Array<Object>} usages - Array of token usage objects
- * @returns {Object} Accumulated token usage
+ * @returns {Object} Accumulated token usage (including cache metrics if present)
  */
 export function accumulateTokenUsage(usages) {
     return usages.reduce((acc, usage) => {
         if (!usage) return acc;
 
-        return {
+        const result = {
             promptTokens: (acc.promptTokens || 0) + (usage.promptTokens || 0),
             completionTokens: (acc.completionTokens || 0) + (usage.completionTokens || 0),
             totalTokens: (acc.totalTokens || 0) + (usage.totalTokens || 0)
         };
+
+        // Accumulate cache metrics if present
+        if (usage.cacheCreationInputTokens !== undefined) {
+            result.cacheCreationInputTokens = (acc.cacheCreationInputTokens || 0) + usage.cacheCreationInputTokens;
+        }
+        if (usage.cacheReadInputTokens !== undefined) {
+            result.cacheReadInputTokens = (acc.cacheReadInputTokens || 0) + usage.cacheReadInputTokens;
+        }
+        if (usage.cachedTokens !== undefined) {
+            result.cachedTokens = (acc.cachedTokens || 0) + usage.cachedTokens;
+        }
+
+        return result;
     }, {
         promptTokens: 0,
         completionTokens: 0,
