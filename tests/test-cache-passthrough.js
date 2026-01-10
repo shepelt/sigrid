@@ -36,6 +36,52 @@ Important rules:
 2. Provide code examples when helpful
 3. Explain your reasoning`;
 
+// Large tool definitions to test tool caching (~8K+ tokens)
+// Haiku 4.5 requires >5000 tokens for caching to kick in
+// Each tool has verbose description and parameters to add token weight
+const LARGE_TOOLS = Array(25).fill(null).map((_, i) => ({
+    type: "function",
+    function: {
+        name: `tool_${i}_with_long_name_for_tokens`,
+        description: `This is tool number ${i}. It performs a complex operation that requires detailed documentation. ` +
+            `The tool accepts multiple parameters and returns structured data. ` +
+            `Use this tool when you need to perform operation type ${i}. ` +
+            `This description is intentionally verbose to add token weight for cache testing. ` +
+            `Additional context: this tool is part of a comprehensive toolkit for testing prompt caching with tool definitions. ` +
+            `The tool supports various input formats including JSON, XML, and plain text. ` +
+            `It can process data synchronously or asynchronously depending on the configuration. ` +
+            `Error handling is built-in with detailed error messages and stack traces. ` +
+            `The tool integrates with external services and APIs for enhanced functionality.`,
+        parameters: {
+            type: "object",
+            properties: {
+                input_data: {
+                    type: "string",
+                    description: `The primary input data for tool ${i}. This should be a well-formatted string containing the necessary information for processing.`
+                },
+                options: {
+                    type: "object",
+                    description: `Configuration options for tool ${i}. These options control the behavior of the operation.`,
+                    properties: {
+                        verbose: { type: "boolean", description: "Enable verbose output mode" },
+                        format: { type: "string", description: "Output format (json, text, xml)" },
+                        max_results: { type: "number", description: "Maximum number of results to return" }
+                    }
+                },
+                metadata: {
+                    type: "object",
+                    description: `Additional metadata for tool ${i} execution context.`,
+                    properties: {
+                        request_id: { type: "string", description: "Unique request identifier" },
+                        timestamp: { type: "string", description: "ISO timestamp of the request" }
+                    }
+                }
+            },
+            required: ["input_data"]
+        }
+    }
+}));
+
 async function makeRequest(userMessage, requestNum) {
     console.log(`\n${'='.repeat(60)}`);
     console.log(`Request #${requestNum}: "${userMessage}"`);
@@ -242,6 +288,13 @@ async function main() {
 
     await testSigridCaching();
 
+    // Test 4: Tool caching
+    console.log('\n' + '█'.repeat(60));
+    console.log('TEST 4: Sigrid executeStatic with TOOL caching');
+    console.log('█'.repeat(60));
+
+    await testToolCaching();
+
     console.log('\n' + '█'.repeat(60));
     console.log('SUMMARY');
     console.log('█'.repeat(60));
@@ -319,6 +372,98 @@ async function testSigridCaching() {
         } else {
             console.log(`\n⚠️ ${name}: No cache hits detected`);
         }
+    }
+}
+
+async function testToolCaching() {
+    // Initialize sigrid client with gateway
+    initializeClient({
+        apiKey,
+        baseURL: gatewayUrl
+    });
+
+    // Estimate tool tokens
+    const toolsJson = JSON.stringify(LARGE_TOOLS);
+    const estimatedToolTokens = Math.ceil(toolsJson.length / 4); // rough estimate
+    console.log(`\nTool definitions: ${LARGE_TOOLS.length} tools, ~${estimatedToolTokens} tokens (estimated)`);
+
+    // Use small system prompt to isolate tool caching effect
+    const SMALL_SYSTEM_PROMPT = 'You are a helpful assistant. Answer briefly.';
+
+    // Test with Anthropic model (tool caching most relevant here)
+    const testModel = 'anthropic/claude-haiku-4-5-20251001';
+    console.log(`\n--- Testing Tool Caching with ${testModel} ---\n`);
+
+    let cacheHitCount = 0;
+    const results = [];
+
+    for (let i = 1; i <= 3; i++) {
+        console.log(`Request ${i}:`);
+        const start = Date.now();
+
+        try {
+            const result = await executeStatic(`What is ${i * 10} + ${i * 10}? Answer with just the number.`, {
+                model: testModel,
+                instructions: SMALL_SYSTEM_PROMPT,
+                tools: LARGE_TOOLS,
+                // Don't actually call tools, just include them (Anthropic requires object format)
+                enablePromptCaching: true,
+                max_tokens: 50
+            });
+
+            const latency = Date.now() - start;
+            const tc = result.tokenCount || {};
+
+            const created = tc.cacheCreationInputTokens || 0;
+            const read = tc.cacheReadInputTokens || 0;
+            const promptTokens = tc.promptTokens || 0;
+
+            results.push({ created, read, promptTokens, latency });
+
+            console.log(`  ${latency}ms | prompt: ${promptTokens}, cache_create: ${created}, cache_read: ${read}`);
+
+            if (read > 0) {
+                console.log('  🎉 CACHE HIT!');
+                cacheHitCount++;
+            } else if (created > 0) {
+                console.log('  📝 Cache created');
+            }
+
+            console.log(`  Response: ${result.content.trim()}`);
+        } catch (error) {
+            console.error(`  ❌ Failed: ${error.message}`);
+        }
+
+        if (i < 3) await new Promise(r => setTimeout(r, 2000));
+    }
+
+    // Analysis
+    console.log('\n--- Tool Caching Analysis ---');
+
+    if (results.length >= 2) {
+        const firstCreated = results[0]?.created || 0;
+        const secondRead = results[1]?.read || 0;
+
+        if (firstCreated > 0 && secondRead > 0) {
+            console.log(`✅ Tool caching working!`);
+            console.log(`   First request cached ${firstCreated} tokens`);
+            console.log(`   Second request read ${secondRead} tokens from cache`);
+
+            // Calculate savings
+            const savingsPercent = ((secondRead / (results[1]?.promptTokens + secondRead)) * 100).toFixed(1);
+            console.log(`   Cache hit rate: ~${savingsPercent}% of input tokens`);
+        } else if (firstCreated > 0) {
+            console.log(`⚠️ Cache created but no cache hits on subsequent requests`);
+            console.log(`   This may indicate tool cache_control is not being passed through`);
+        } else {
+            console.log(`❌ No cache metrics detected - caching may not be enabled`);
+        }
+    }
+
+    if (cacheHitCount > 0) {
+        console.log(`\n✅ Tool caching: ${cacheHitCount}/2 cache hits`);
+    } else {
+        console.log(`\n⚠️ Tool caching: No cache hits detected`);
     }
 }
 

@@ -210,7 +210,14 @@ export async function executeStatic(prompt, opts = {}) {
 
         // Add tools if provided (normalize format)
         if (opts.tools && opts.tools.length > 0) {
-            requestParams.tools = opts.tools.map(normalizeToolFormat);
+            requestParams.tools = opts.tools.map((tool, i, arr) => {
+                const normalized = normalizeToolFormat(tool);
+                // Add cache_control to last tool for prompt caching
+                if (opts.enablePromptCaching && i === arr.length - 1) {
+                    normalized.cache_control = { type: "ephemeral" };
+                }
+                return normalized;
+            });
             if (opts.tool_choice !== undefined) {
                 requestParams.tool_choice = opts.tool_choice;
             }
@@ -438,7 +445,14 @@ export async function executeStatic(prompt, opts = {}) {
 
     // Add tools if provided (normalize format) - IMPORTANT: Also needed for streaming!
     if (opts.tools && opts.tools.length > 0) {
-        streamParams.tools = opts.tools.map(normalizeToolFormat);
+        streamParams.tools = opts.tools.map((tool, i, arr) => {
+            const normalized = normalizeToolFormat(tool);
+            // Add cache_control to last tool for prompt caching
+            if (opts.enablePromptCaching && i === arr.length - 1) {
+                normalized.cache_control = { type: "ephemeral" };
+            }
+            return normalized;
+        });
         if (opts.tool_choice !== undefined) {
             streamParams.tool_choice = opts.tool_choice;
         }
